@@ -1,0 +1,414 @@
+/* ─── Google Fonts ──────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Playful Geometric Design Tokens ───────────────── */
+:root {
+  --brand-bg:         #FFFDF5;
+  --brand-fg:         #1E293B;
+  --brand-muted:      #F1F5F9;
+  --brand-muted-fg:   #64748B;
+  --brand-accent:     #8B5CF6;
+  --brand-secondary:  #F472B6;
+  --brand-tertiary:   #FBBF24;
+  --brand-quaternary: #34D399;
+  --brand-border:     #E2E8F0;
+  --brand-card:       #FFFFFF;
+  --pop-shadow:       4px 4px 0px 0px #1E293B;
+  --pop-shadow-lg:    6px 6px 0px 0px #1E293B;
+  --pop-shadow-sm:    2px 2px 0px 0px #1E293B;
+}
+
+/* ─── Playful Geometric Utilities ───────────────────── */
+.font-outfit  { font-family: 'Outfit', system-ui, sans-serif; }
+.font-jakarta { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }
+
+/* Hard "pop" shadow button — Candy Button pattern */
+.btn-candy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--brand-accent);
+  color: #fff;
+  font-family: 'Outfit', system-ui, sans-serif;
+  font-weight: 700;
+  border: 2px solid #1E293B;
+  border-radius: 9999px;
+  padding: 12px 28px;
+  box-shadow: var(--pop-shadow);
+  transition: all 0.2s cubic-bezier(0.34,1.56,0.64,1);
+  cursor: pointer;
+  user-select: none;
+}
+.btn-candy:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: var(--pop-shadow-lg);
+}
+.btn-candy:active {
+  transform: translate(2px, 2px);
+  box-shadow: var(--pop-shadow-sm);
+}
+
+/* Outlined secondary button */
+.btn-outline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: transparent;
+  color: var(--brand-fg);
+  font-family: 'Outfit', system-ui, sans-serif;
+  font-weight: 700;
+  border: 2px solid #1E293B;
+  border-radius: 9999px;
+  padding: 12px 28px;
+  transition: all 0.2s cubic-bezier(0.34,1.56,0.64,1);
+  cursor: pointer;
+}
+.btn-outline:hover {
+  background: var(--brand-tertiary);
+}
+
+/* Sticker card */
+.card-sticker {
+  background: var(--brand-card);
+  border: 2px solid #1E293B;
+  border-radius: 16px;
+  box-shadow: var(--pop-shadow);
+  transition: all 0.3s cubic-bezier(0.34,1.56,0.64,1);
+}
+.card-sticker:hover {
+  transform: rotate(-1deg) scale(1.02);
+  box-shadow: var(--pop-shadow-lg);
+}
+
+/* Brand input */
+.input-brand {
+  width: 100%;
+  background: #fff;
+  border: 2px solid #CBD5E1;
+  border-radius: 12px;
+  padding: 12px 16px;
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  font-size: 14px;
+  color: var(--brand-fg);
+  box-shadow: 4px 4px 0px transparent;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  outline: none;
+}
+.input-brand.pl-10 {
+  padding-left: 40px;
+}
+.input-brand:focus {
+  border-color: var(--brand-accent);
+  box-shadow: 4px 4px 0px var(--brand-accent);
+}
+
+/* Dot-grid background */
+.dot-grid {
+  background-image: radial-gradient(#CBD5E1 1.5px, transparent 1.5px);
+  background-size: 20px 20px;
+}
+
+/* Diagonal stripe fill */
+.stripe-fill {
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 6px,
+    rgba(139,92,246,0.15) 6px,
+    rgba(139,92,246,0.15) 12px
+  );
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .btn-candy, .btn-outline, .card-sticker { transition: none; }
+  .animate-wiggle, .animate-float, .animate-popIn { animation: none; }
+}
+
+
+
+/* ─── Reset & Base ──────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  /* Prevent tap highlight flash on touch devices */
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: var(--brand-bg);
+  color: var(--brand-fg);
+  /* Prevent text size change on orientation change */
+  -webkit-text-size-adjust: 100%;
+}
+
+input, select, textarea, button {
+  font-family: inherit;
+}
+
+input, select, textarea {
+  outline: none;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* ─── Touch target enforcement (≥ 44px) ─────────────── */
+.btn-touch {
+  min-height: 44px;
+  min-width: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ─── POS-specific tablet sizing ────────────────────── */
+.product-card {
+  min-height: 120px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.product-card-name {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.product-card-price {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.qty-btn {
+  min-width: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  font-size: 18px;
+  font-weight: 600;
+  transition: background 0.15s;
+}
+
+.pay-btn {
+  min-height: 56px;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+/* ─── Scrollbar ─────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
+
+/* Dark context scrollbars (POS / Kitchen) */
+.bg-gray-950 ::-webkit-scrollbar-thumb,
+[style*="030712"] ::-webkit-scrollbar-thumb {
+  background: #4b5563;
+}
+[style*="030712"] ::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
+/* ─── Hide scrollbar utility ────────────────────────── */
+.scrollbar-none::-webkit-scrollbar { display: none; }
+.scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ─── Skeleton pulse animation ──────────────────────── */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.4; }
+  50%       { opacity: 0.8; }
+}
+
+.skeleton {
+  background: #1f2937;
+  border-radius: 6px;
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+
+/* ─── Slide-in for new KDS tickets ──────────────────── */
+@keyframes slideInDown {
+  from { opacity: 0; transform: translateY(-12px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ─── Modal entrance ────────────────────────────────── */
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(0.95) translateY(8px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* ─── FadeIn ────────────────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fadeIn {
+  animation: fadeIn 0.35s ease-out forwards;
+}
+
+/* ─── Staggered children fade-in ────────────────────── */
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-slideUp {
+  animation: slideUp 0.4s ease-out forwards;
+}
+.stagger-1 { animation-delay: 0.05s; opacity: 0; }
+.stagger-2 { animation-delay: 0.10s; opacity: 0; }
+.stagger-3 { animation-delay: 0.15s; opacity: 0; }
+.stagger-4 { animation-delay: 0.20s; opacity: 0; }
+.stagger-5 { animation-delay: 0.25s; opacity: 0; }
+
+/* ─── Pop in ───────────────────────────────────────── */
+@keyframes popIn {
+  0%   { opacity: 0; transform: scale(0.8); }
+  70%  { transform: scale(1.05); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.animate-popIn {
+  animation: popIn 0.4s cubic-bezier(0.34,1.56,0.64,1) forwards;
+}
+
+/* ─── Status badge colors (global) ──────────────────── */
+.badge-draft      { @apply bg-gray-700 text-gray-300; }
+.badge-kitchen    { @apply bg-blue-500/20 text-blue-400 border border-blue-500/30; }
+.badge-paid       { @apply bg-green-500/20 text-green-400 border border-green-500/30; }
+.badge-cancelled  { @apply bg-red-500/20 text-red-400 border border-red-500/30; }
+
+/* ─── Table status dots ──────────────────────────────── */
+.table-available  { @apply bg-gray-800 border-gray-700; }
+.table-occupied   { @apply bg-orange-500/10 border-orange-500/50; }
+.table-inactive   { @apply bg-gray-900 border-gray-800 opacity-40; }
+.dot-available    { @apply bg-green-500; }
+.dot-occupied     { @apply bg-orange-500; }
+.dot-inactive     { @apply bg-gray-600; }
+
+/* ─── Toast overrides (react-hot-toast) ─────────────── */
+[data-sonner-toaster], .react-hot-toast {
+  z-index: 9999;
+}
+
+/* ─── Focus ring utility ────────────────────────────── */
+.focus-ring:focus {
+  outline: 2px solid #F97316;
+  outline-offset: 2px;
+}
+
+/* ─── Transition shorthand ──────────────────────────── */
+.transition-fast { transition: all 0.15s ease; }
+.transition-base { transition: all 0.2s ease; }
+.transition-slow { transition: all 0.3s ease; }
+
+/* ─── Print styles ──────────────────────────────────── */
+@media print {
+  /* Receipt print — only show the receipt element */
+  body > *:not(#receipt-print-area):not(script) {
+    display: none !important;
+  }
+  #receipt-print-area {
+    display: block !important;
+    font-size: 12px;
+    font-family: monospace;
+    color: #000;
+    background: #fff;
+    padding: 16px;
+  }
+
+  /* Report print — hide filters, convert dark colors */
+  #report-filters,
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: white !important;
+    color: #111 !important;
+  }
+  .bg-gray-900,
+  .bg-gray-800,
+  .bg-gray-950 {
+    background: #f9fafb !important;
+  }
+  .text-white {
+    color: #111 !important;
+  }
+  .text-gray-400,
+  .text-gray-500 {
+    color: #6b7280 !important;
+  }
+  .border-gray-800,
+  .border-gray-700 {
+    border-color: #e5e7eb !important;
+  }
+}
+
+/* ─── Responsive POS layout ─────────────────────────── */
+@media (max-width: 1023px) {
+  /* On mobile/tablet, product grid uses auto-fit columns */
+  .pos-product-grid {
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)) !important;
+  }
+  /* Stacking columns is controlled by hidden/flex in React */
+  .pos-layout {
+    flex-direction: column !important;
+  }
+  .pos-product-col {
+    width: 100% !important;
+    height: 100% !important;
+    max-height: none !important;
+    border-right: none !important;
+    border-bottom: none !important;
+  }
+  .pos-cart-col {
+    width: 100% !important;
+    height: 100% !important;
+    max-height: none !important;
+    border-left: none !important;
+  }
+}
+
+@media print {
+  body * { visibility: hidden; }
+  #reports-printable,
+  #reports-printable * { visibility: visible; }
+  #reports-printable {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    background: white;
+    color: black;
+    padding: 24px;
+    font-family: sans-serif;
+  }
+  .no-print { display: none !important; }
+}

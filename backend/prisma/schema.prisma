@@ -1,0 +1,564 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum Role {
+  ADMIN
+  MANAGER
+  WAITER
+  CASHIER
+  KITCHEN
+  BAR
+  INVENTORY
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED
+}
+
+enum PromotionTarget {
+  PRODUCT
+  ORDER
+}
+
+
+
+enum SessionStatus {
+  OPEN
+  CLOSED
+}
+
+enum OrderStatus {
+  DRAFT
+  SENT_TO_KITCHEN
+  READY
+  PAID
+  CANCELLED
+}
+
+enum OrderType {
+  TABLE
+  ROOM
+  DELIVERY
+  PICKUP
+}
+
+enum KdsStage {
+  TO_COOK
+  PREPARING
+  COMPLETED
+}
+
+enum KdsItemStatus {
+  PENDING
+  DONE
+}
+
+enum KdsStation {
+  KITCHEN
+  BAR
+}
+
+// ============================================================
+// ORGANIZATION
+// ============================================================
+
+model Organization {
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now())
+
+  users          User[]
+  categories     ProductCategory[]
+  products       Product[]
+  paymentMethods PaymentMethod[]
+  floors         Floor[]
+  tables         Table[]
+  coupons        Coupon[]
+  promotions     Promotion[]
+  sessions       PosSession[]
+  orders         Order[]
+  customers      Customer[]
+}
+
+// ============================================================
+// USERS
+// ============================================================
+
+model User {
+  id       String @id @default(uuid())
+  name     String
+  email    String @unique
+  password String
+
+  role Role @default(WAITER)
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  // POS sessions opened by this user
+  sessions PosSession[]
+
+  // Orders created by this user
+  createdOrders Order[] @relation("CreatedOrders")
+
+  // Orders assigned to this waiter
+  waiterOrders Order[] @relation("WaiterOrders")
+
+  @@index([organizationId])
+  @@index([organizationId, role])
+}
+
+// ============================================================
+// PRODUCT CATEGORIES
+// ============================================================
+
+model ProductCategory {
+  id    String @id @default(uuid())
+  name  String
+  color String @default("#6B7280")
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  products Product[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+}
+
+// ============================================================
+// PRODUCTS
+// ============================================================
+
+model Product {
+  id String @id @default(uuid())
+
+  name String
+  imageUrl String?
+  categoryId String
+
+  price Decimal @db.Decimal(10, 2)
+
+  unitOfMeasure String @default("piece")
+
+  tax Decimal @default(0) @db.Decimal(5, 2)
+
+  description String?
+
+  // Determines where this product should be prepared.
+  //
+  // KITCHEN = Kitchen KDS
+  // BAR     = Bar KDS
+  // null    = No KDS station
+  kdsStation KdsStation?
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  category ProductCategory @relation(fields: [categoryId], references: [id])
+
+  orderLines OrderLine[]
+
+  promotions Promotion[]
+
+  @@index([organizationId])
+  @@index([organizationId, categoryId])
+  @@index([organizationId, kdsStation])
+}
+
+// ============================================================
+// PAYMENT METHODS
+// ============================================================
+
+model PaymentMethod {
+  id String @id @default(uuid())
+
+  name String
+
+  isEnabled Boolean @default(true)
+
+  upiId String?
+
+  organizationId String
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  payments Payment[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+}
+
+// ============================================================
+// FLOORS
+// ============================================================
+
+model Floor {
+  id String @id @default(uuid())
+
+  name String
+
+  isActive Boolean @default(true)
+
+  organizationId String
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  tables Table[]
+
+  @@index([organizationId])
+}
+
+// ============================================================
+// TABLES
+// ============================================================
+
+model Table {
+  id String @id @default(uuid())
+
+  tableNumber String
+
+  seats Int
+
+  floorId String
+
+  isActive Boolean @default(true)
+
+  // Currently active order on the table
+  currentOrderId String?
+
+  // Table position in floor/table editor
+  x Int @default(0)
+  y Int @default(0)
+
+  shape String @default("square")
+
+  organizationId String
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  floor Floor @relation(fields: [floorId], references: [id])
+
+  orders Order[]
+
+  @@index([organizationId])
+  @@index([organizationId, floorId])
+}
+
+// ============================================================
+// COUPONS
+// ============================================================
+
+model Coupon {
+  id String @id @default(uuid())
+
+  code String
+
+  discountType DiscountType
+
+  discountValue Decimal @db.Decimal(10, 2)
+
+  isActive Boolean @default(true)
+
+  usageCount Int @default(0)
+
+  createdAt DateTime @default(now())
+
+  organizationId String
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+}
+
+// ============================================================
+// PROMOTIONS
+// ============================================================
+
+model Promotion {
+  id String @id @default(uuid())
+
+  name String
+
+  applyTo PromotionTarget
+
+  productId String?
+
+  minQuantity Int?
+
+  minOrderAmount Decimal? @db.Decimal(10, 2)
+
+  discountType DiscountType
+
+  discountValue Decimal @db.Decimal(10, 2)
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+
+  organizationId String
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  product Product? @relation(fields: [productId], references: [id])
+
+  @@index([organizationId])
+  @@index([organizationId, productId])
+}
+
+// ============================================================
+// POS SESSIONS
+// ============================================================
+
+model PosSession {
+  id String @id @default(uuid())
+
+  openedAt DateTime @default(now())
+
+  closedAt DateTime?
+
+  openedById String
+
+  lastSaleAmount Decimal @default(0) @db.Decimal(10, 2)
+
+  totalOrders Int @default(0)
+
+  totalRevenue Decimal @default(0) @db.Decimal(10, 2)
+
+  status SessionStatus @default(OPEN)
+
+  organizationId String
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  openedBy User @relation(fields: [openedById], references: [id])
+
+  orders Order[]
+
+  @@index([organizationId])
+  @@index([organizationId, status])
+}
+
+// ============================================================
+// CUSTOMERS
+// ============================================================
+
+model Customer {
+  id String @id @default(uuid())
+
+  name String
+
+  email String?
+
+  phone String?
+
+  createdAt DateTime @default(now())
+
+  // Important for multi-restaurant / multi-tenant isolation
+  organizationId String
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  orders Order[]
+
+  @@index([organizationId])
+  @@index([organizationId, phone])
+  @@index([organizationId, email])
+}
+
+// ============================================================
+// ORDERS
+// ============================================================
+
+model Order {
+  id String @id @default(uuid())
+
+  orderNumber String
+
+  sessionId String
+
+  tableId String?
+
+  status OrderStatus @default(DRAFT)
+
+  orderType OrderType @default(TABLE)
+
+ deliveryLocation String?
+
+ customerNameSnapshot String?
+ customerPhoneSnapshot String?
+
+ customerNotes String?
+
+  subtotal Decimal @default(0) @db.Decimal(10, 2)
+
+  taxAmount Decimal @default(0) @db.Decimal(10, 2)
+
+  discountAmount Decimal @default(0) @db.Decimal(10, 2)
+
+  total Decimal @default(0) @db.Decimal(10, 2)
+
+  // Kept for backward compatibility.
+  // Actual payment records are stored in Payment.
+  paymentMethod String?
+
+  paymentReference String?
+
+  couponCode String?
+
+  // User who created the order
+  createdById String
+
+  // Waiter responsible for the order
+  waiterId String?
+
+  createdAt DateTime @default(now())
+
+  updatedAt DateTime @updatedAt
+
+  organizationId String
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  session PosSession @relation(fields: [sessionId], references: [id])
+
+  table Table? @relation(fields: [tableId], references: [id])
+
+  customers Customer[]
+
+  createdBy User @relation("CreatedOrders", fields: [createdById], references: [id])
+
+  waiter User? @relation("WaiterOrders", fields: [waiterId], references: [id])
+
+  lines OrderLine[]
+
+  // An order can have one Kitchen ticket
+  // and one Bar ticket.
+  kdsTickets KdsTicket[]
+
+  payments Payment[]
+
+  @@unique([organizationId, orderNumber])
+  @@index([organizationId])
+  @@index([organizationId, status])
+  @@index([organizationId, tableId])
+  @@index([organizationId, waiterId])
+  @@index([sessionId])
+}
+
+// ============================================================
+// PAYMENTS
+// ============================================================
+
+model Payment {
+  id String @id @default(uuid())
+
+  orderId String
+
+  paymentMethodId String
+
+  amount Decimal @db.Decimal(10, 2)
+
+  paymentReference String?
+
+  createdAt DateTime @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  paymentMethod PaymentMethod @relation(fields: [paymentMethodId], references: [id])
+
+  @@index([orderId])
+  @@index([paymentMethodId])
+}
+
+// ============================================================
+// ORDER LINES
+// ============================================================
+
+model OrderLine {
+  id String @id @default(uuid())
+
+  orderId String
+
+  productId String
+
+  quantity Int
+
+  unitPrice Decimal @db.Decimal(10, 2)
+
+  lineTotal Decimal @db.Decimal(10, 2)
+
+  discount Decimal @default(0) @db.Decimal(10, 2)
+
+  // Store station at the time the order was created.
+  //
+  // This prevents changing the Product's station
+  // from affecting an existing order.
+  kdsStation KdsStation?
+
+  kdsStatus KdsItemStatus @default(PENDING)
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+  @@index([productId])
+  @@index([orderId, kdsStation])
+}
+
+// ============================================================
+// KDS TICKETS
+// ============================================================
+
+model KdsTicket {
+  id String @id @default(uuid())
+
+  orderId String
+
+  // Which station owns this ticket
+  station KdsStation
+
+  stage KdsStage @default(TO_COOK)
+
+  createdAt DateTime @default(now())
+
+  updatedAt DateTime @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  // One ticket per order per station.
+  //
+  // Example:
+  // Order 100 + KITCHEN
+  // Order 100 + BAR
+  //
+  // Both can exist.
+  @@unique([orderId, station])
+  @@index([station, stage])
+  @@index([orderId])
+}
