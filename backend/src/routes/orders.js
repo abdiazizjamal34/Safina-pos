@@ -550,84 +550,9 @@ router.put('/:id/send-kitchen', verifyToken, requireWaiter, async (req, res) => 
   } catch (e) { console.error(e); res.status(500).json({ error: 'Something went wrong' }); }
 });
 
-// router.put('/:id/pay', verifyToken, requireWaiter, async (req, res) => {
-//   try {
-//     const { paymentMethod, paymentReference, payments } = req.body;
-//     if (!paymentMethod && (!Array.isArray(payments) || payments.length === 0)) {
-//       return res.status(400).json({ error: 'Payment method or payments array required' });
-//     }
 
-//     const existingOrder = await prisma.order.findFirst({
-//       where: { id: req.params.id, organizationId: req.user.organizationId }
-//     });
-//     if (!existingOrder) return res.status(404).json({ error: 'Order not found' });
-//     if (existingOrder.status !== 'READY') return res.status(400).json({ error: 'Only ready orders can be paid' });
 
-//     let paymentRecords = [];
-//     if (Array.isArray(payments) && payments.length > 0) {
-//       paymentRecords = payments.map(p => ({
-//         amount: parseFloat(p.amount),
-//         method: p.method,
-//         paymentReference: p.reference || null
-//       }));
-//     } else {
-//       paymentRecords = [{
-//         amount: existingOrder.total,
-//         method: paymentMethod,
-//         paymentReference
-//       }];
-//     }
 
-//     if (paymentRecords.some(payment => !Number.isFinite(payment.amount) || payment.amount <= 0 || !payment.method)) {
-//       return res.status(400).json({ error: 'Payments must have a valid method and positive amount' });
-//     }
-//     const totalPaid = paymentRecords.reduce((sum, payment) => sum + payment.amount, 0);
-//     if (Math.abs(totalPaid - Number(existingOrder.total)) > 0.01) {
-//       return res.status(400).json({ error: 'Payment total must equal order total' });
-//     }
-//     const methods = await prisma.paymentMethod.findMany({
-//       where: { organizationId: req.user.organizationId, name: { in: paymentRecords.map(payment => payment.method) }, isEnabled: true }
-//     });
-//     const methodByName = new Map(methods.map(method => [method.name, method]));
-//     if (paymentRecords.some(payment => !methodByName.has(payment.method))) {
-//       return res.status(400).json({ error: 'One or more payment methods are unavailable' });
-//     }
-
-//     const order = await prisma.$transaction(async tx => {
-//       const claimed = await tx.order.updateMany({
-//         where: { id: req.params.id, organizationId: req.user.organizationId, status: 'READY' },
-//         data: {
-//           status: 'PAID',
-//           paymentMethod: paymentMethod || 'SPLIT',
-//           paymentReference: paymentReference || 'Split Payments',
-//         },
-//       });
-//       if (claimed.count !== 1) {
-//         const error = new Error('Order is no longer ready for payment');
-//         error.status = 409;
-//         throw error;
-//       }
-
-//       const updated = await tx.order.update({
-//         where: { id: req.params.id },
-//         data: {
-//           payments: { create: paymentRecords.map(payment => ({ amount: payment.amount, paymentMethodId: methodByName.get(payment.method).id, paymentReference: payment.paymentReference })) }
-//         },
-//         include: { lines: { include: { product: true } }, customers: true, table: true, payments: true }
-//       });
-//       if (updated.tableId) await tx.table.update({ where: { id: updated.tableId }, data: { currentOrderId: null } });
-//       await tx.posSession.update({ where: { id: updated.sessionId }, data: { lastSaleAmount: updated.total, totalOrders: { increment: 1 }, totalRevenue: { increment: updated.total } } });
-//       return updated;
-//     });
-    
-//     const io = req.app.get('io');
-//     io.to(`kds-room-${req.user.organizationId}`).emit('order-paid', { orderId: order.id });
-//     res.json(order);
-//   } catch (e) {
-//     console.error(e);
-//     res.status(e.status || 500).json({ error: e.message || 'Something went wrong' });
-//   }
-// });
 
 router.put('/:id/cancel', verifyToken, requireWaiter, async (req, res) => {
   try {
@@ -1139,6 +1064,416 @@ console.log('===========================================');
 //   }
 // });
 
+// router.put('/:id', verifyToken, requireWaiter, async (req, res) => {
+//   try {
+//     const { id } = req.params;
+
+//     const {
+//       tableId,
+//       customerId,
+//       customerIds,
+//       lines,
+//       couponCode,
+
+//       // Customer order information
+//       orderType,
+//       deliveryLocation,
+//       customerNotes
+//     } = req.body;
+
+//     // --------------------------------------------------
+//     // 1. Validate order lines
+//     // --------------------------------------------------
+//     const lineError = validateLines(lines);
+
+//     if (lineError) {
+//       return res.status(400).json({
+//         error: lineError
+//       });
+//     }
+
+//     // --------------------------------------------------
+//     // 2. Find existing order
+//     // --------------------------------------------------
+//     const existingOrder = await prisma.order.findFirst({
+//       where: {
+//         id,
+//         organizationId: req.user.organizationId
+//       },
+//       include: {
+//         lines: true,
+//         customers: true
+//       }
+//     });
+
+//     if (!existingOrder) {
+//       return res.status(404).json({
+//         error: 'Order not found'
+//       });
+//     }
+
+//     // --------------------------------------------------
+//     // 3. Check order status
+//     // --------------------------------------------------
+//     if (
+//       existingOrder.status !== 'DRAFT' &&
+//       existingOrder.status !== 'SENT_TO_KITCHEN' &&
+//       existingOrder.status !== 'READY'
+//     ) {
+//       return res.status(400).json({
+//         error: 'Only draft, kitchen, or ready orders can be updated'
+//       });
+//     }
+
+//     // --------------------------------------------------
+//     // 4. Validate order type
+//     // --------------------------------------------------
+//     const allowedOrderTypes = [
+//       'TABLE',
+//       'ROOM',
+//       'DELIVERY',
+//       'PICKUP'
+//     ];
+
+//     const finalOrderType =
+//       orderType ||
+//       existingOrder.orderType ||
+//       (tableId ? 'TABLE' : 'PICKUP');
+
+//     if (!allowedOrderTypes.includes(finalOrderType)) {
+//       return res.status(400).json({
+//         error: 'Invalid order type'
+//       });
+//     }
+
+//     // --------------------------------------------------
+//     // 5. Validate order-type-specific information
+//     // --------------------------------------------------
+
+//     if (finalOrderType === 'TABLE' && !tableId) {
+//       return res.status(400).json({
+//         error: 'Table is required for TABLE orders'
+//       });
+//     }
+
+//     if (
+//       (finalOrderType === 'ROOM' ||
+//         finalOrderType === 'DELIVERY') &&
+//       (!deliveryLocation || !deliveryLocation.trim())
+//     ) {
+//       return res.status(400).json({
+//         error: 'Delivery location is required for ROOM or DELIVERY orders'
+//       });
+//     }
+
+//     if (finalOrderType !== 'TABLE' && tableId) {
+//       return res.status(400).json({
+//         error: 'Table cannot be assigned to this order type'
+//       });
+//     }
+
+//     // --------------------------------------------------
+//     // 6. Verify table belongs to organization
+//     // --------------------------------------------------
+//     if (tableId) {
+//       const table = await prisma.table.findFirst({
+//         where: {
+//           id: tableId,
+//           organizationId: req.user.organizationId
+//         }
+//       });
+
+//       if (!table) {
+//         return res.status(404).json({
+//           error: 'Table not found or access denied'
+//         });
+//       }
+
+//       // Prevent assigning another active order
+//       // to the same table.
+//       if (
+//         table.currentOrderId &&
+//         table.currentOrderId !== id
+//       ) {
+//         const existingTableOrder = await prisma.order.findFirst({
+//           where: {
+//             id: table.currentOrderId,
+//             organizationId: req.user.organizationId,
+//             status: {
+//               in: [
+//                 'DRAFT',
+//                 'SENT_TO_KITCHEN',
+//                 'READY'
+//               ]
+//             }
+//           }
+//         });
+
+//         if (existingTableOrder) {
+//           return res.status(409).json({
+//             error: 'This table already has an active order'
+//           });
+//         }
+//       }
+//     }
+
+//     // --------------------------------------------------
+//     // 7. Build customer connection
+//     // --------------------------------------------------
+//     let customerConnect = [];
+
+//     if (Array.isArray(customerIds)) {
+//       customerConnect = customerIds.map(id => ({
+//         id
+//       }));
+//     } else if (Array.isArray(customerId)) {
+//       customerConnect = customerId.map(id => ({
+//         id
+//       }));
+//     } else if (customerId) {
+//       customerConnect = [
+//         {
+//           id: customerId
+//         }
+//       ];
+//     }
+
+//     // --------------------------------------------------
+//     // 8. Verify customers belong to organization
+//     // --------------------------------------------------
+//     let selectedCustomers = [];
+
+//     if (customerConnect.length > 0) {
+//       selectedCustomers = await prisma.customer.findMany({
+//         where: {
+//           id: {
+//             in: customerConnect.map(c => c.id)
+//           },
+//           organizationId: req.user.organizationId
+//         },
+//         select: {
+//           id: true,
+//           name: true,
+//           phone: true
+//         }
+//       });
+
+//       if (
+//         selectedCustomers.length !==
+//         customerConnect.length
+//       ) {
+//         return res.status(404).json({
+//           error: 'One or more customers not found'
+//         });
+//       }
+//     }
+
+//     // --------------------------------------------------
+//     // 9. Customer snapshot
+//     // --------------------------------------------------
+//     const selectedCustomer =
+//       selectedCustomers[0] || null;
+
+//     const customerNameSnapshot =
+//       selectedCustomer?.name || null;
+
+//     const customerPhoneSnapshot =
+//       selectedCustomer?.phone || null;
+
+//     // --------------------------------------------------
+//     // 10. Calculate updated order
+//     // --------------------------------------------------
+//     const finalLines = lines;
+
+//     const {
+//       processedLines,
+//       subtotal,
+//       taxAmount,
+//       discountAmount,
+//       total
+//     } = await calcOrder(
+//       finalLines,
+//       couponCode,
+//       req.user.organizationId
+//     );
+
+//     // --------------------------------------------------
+//     // 11. Update order transactionally
+//     // --------------------------------------------------
+//     const order = await prisma.$transaction(
+//       async (tx) => {
+
+//         // Delete old lines
+//         await tx.orderLine.deleteMany({
+//           where: {
+//             orderId: id
+//           }
+//         });
+
+//         // Update order
+//         const updated = await tx.order.update({
+//           where: {
+//             id
+//           },
+//           data: {
+//             tableId:
+//               finalOrderType === 'TABLE'
+//                 ? tableId
+//                 : null,
+
+//             orderType: finalOrderType,
+
+//             deliveryLocation:
+//               deliveryLocation?.trim() || null,
+
+//             customerNameSnapshot,
+
+//             customerPhoneSnapshot,
+
+//             customerNotes:
+//               customerNotes?.trim() || null,
+
+//             couponCode:
+//               couponCode?.trim() || null,
+
+//             subtotal,
+//             taxAmount,
+//             discountAmount,
+//             total,
+
+//             lines: {
+//               create: processedLines
+//             },
+
+//             customers: {
+//               set: customerConnect
+//             }
+//           },
+
+//           include: {
+//             lines: {
+//               include: {
+//                 product: true
+//               }
+//             },
+//             customers: true,
+//             table: true,
+//             payments: true
+//           }
+//         });
+
+//         // --------------------------------------------------
+//         // Update table assignment
+//         // --------------------------------------------------
+//         const oldTableId = existingOrder.tableId;
+
+//         const newTableId =
+//           finalOrderType === 'TABLE'
+//             ? tableId
+//             : null;
+
+//         if (oldTableId !== newTableId) {
+
+//           // Clear old table
+//           if (oldTableId) {
+//             await tx.table.update({
+//               where: {
+//                 id: oldTableId
+//               },
+//               data: {
+//                 currentOrderId: null
+//               }
+//             });
+//           }
+
+//           // Assign new table
+//           if (newTableId) {
+//             await tx.table.update({
+//               where: {
+//                 id: newTableId
+//               },
+//               data: {
+//                 currentOrderId: id
+//               }
+//             });
+//           }
+
+//         } else if (newTableId) {
+
+//           // Make sure current table still points
+//           // to this order.
+//           await tx.table.update({
+//             where: {
+//               id: newTableId
+//             },
+//             data: {
+//               currentOrderId: id
+//             }
+//           });
+//         }
+
+//         return updated;
+//       }
+//     );
+
+//     // --------------------------------------------------
+//     // 12. Notify KDS
+//     // --------------------------------------------------
+//     const tickets = await prisma.kdsTicket.findMany({
+//       where: {
+//         orderId: order.id
+//       }
+//     });
+
+//     if (tickets.length > 0) {
+
+//       const fullTickets =
+//         await prisma.kdsTicket.findMany({
+//           where: {
+//             id: {
+//               in: tickets.map(ticket => ticket.id)
+//             }
+//           },
+
+//           include: {
+//             order: {
+//               include: {
+//                 lines: {
+//                   include: {
+//                     product: true
+//                   }
+//                 },
+//                 table: true,
+//                 customers: true
+//               }
+//             }
+//           }
+//         });
+
+//       const io = req.app.get('io');
+
+//       io.to(
+//         `kds-room-${req.user.organizationId}`
+//       ).emit(
+//         'ticket-updated',
+//         fullTickets
+//       );
+//     }
+
+//     // --------------------------------------------------
+//     // 13. Return updated order
+//     // --------------------------------------------------
+//     res.json(order);
+
+//   } catch (e) {
+//     console.error('Update order error:', e);
+
+//     res.status(500).json({
+//       error: e.message || 'Something went wrong'
+//     });
+//   }
+// });
+
 router.put('/:id', verifyToken, requireWaiter, async (req, res) => {
   try {
     const { id } = req.params;
@@ -1378,14 +1713,18 @@ router.put('/:id', verifyToken, requireWaiter, async (req, res) => {
     const order = await prisma.$transaction(
       async (tx) => {
 
+        // ----------------------------------------------
         // Delete old lines
+        // ----------------------------------------------
         await tx.orderLine.deleteMany({
           where: {
             orderId: id
           }
         });
 
+        // ----------------------------------------------
         // Update order
+        // ----------------------------------------------
         const updated = await tx.order.update({
           where: {
             id
@@ -1431,15 +1770,18 @@ router.put('/:id', verifyToken, requireWaiter, async (req, res) => {
                 product: true
               }
             },
+
             customers: true,
+
             table: true,
+
             payments: true
           }
         });
 
-        // --------------------------------------------------
+        // ----------------------------------------------
         // Update table assignment
-        // --------------------------------------------------
+        // ----------------------------------------------
         const oldTableId = existingOrder.tableId;
 
         const newTableId =
@@ -1487,6 +1829,63 @@ router.put('/:id', verifyToken, requireWaiter, async (req, res) => {
           });
         }
 
+        // ==================================================
+        // KDS FIX
+        // ==================================================
+        // If this order has already been sent to the kitchen,
+        // make sure every station represented by the order
+        // has a KDS ticket.
+        //
+        // Example:
+        //
+        // Existing:
+        //   BAR -> Cafe
+        //
+        // Updated:
+        //   BAR    -> Cafe
+        //   KITCHEN -> Rooti
+        //
+        // This creates the missing KITCHEN ticket.
+        // ==================================================
+
+        if (
+          existingOrder.status === 'SENT_TO_KITCHEN' ||
+          existingOrder.status === 'READY'
+        ) {
+
+          const stations = [
+            ...new Set(
+              updated.lines
+                .map(line => line.kdsStation)
+                .filter(Boolean)
+            )
+          ];
+
+          for (const station of stations) {
+
+            await tx.kdsTicket.upsert({
+              where: {
+                orderId_station: {
+                  orderId: updated.id,
+                  station
+                }
+              },
+
+              // Existing ticket:
+              // keep its current stage.
+              update: {},
+
+              // New station:
+              // create a new ticket.
+              create: {
+                orderId: updated.id,
+                station,
+                stage: 'TO_COOK'
+              }
+            });
+          }
+        }
+
         return updated;
       }
     );
@@ -1494,45 +1893,51 @@ router.put('/:id', verifyToken, requireWaiter, async (req, res) => {
     // --------------------------------------------------
     // 12. Notify KDS
     // --------------------------------------------------
-    const tickets = await prisma.kdsTicket.findMany({
+    //
+    // IMPORTANT:
+    // Fetch ALL tickets after the update.
+    //
+    // This includes newly-created tickets.
+    // --------------------------------------------------
+
+    const fullTickets = await prisma.kdsTicket.findMany({
       where: {
         orderId: order.id
+      },
+
+      include: {
+        order: {
+          include: {
+            lines: {
+              include: {
+                product: true
+              }
+            },
+
+            table: true,
+
+            customers: true
+          }
+        }
       }
     });
 
-    if (tickets.length > 0) {
-
-      const fullTickets =
-        await prisma.kdsTicket.findMany({
-          where: {
-            id: {
-              in: tickets.map(ticket => ticket.id)
-            }
-          },
-
-          include: {
-            order: {
-              include: {
-                lines: {
-                  include: {
-                    product: true
-                  }
-                },
-                table: true,
-                customers: true
-              }
-            }
-          }
-        });
+    // --------------------------------------------------
+    // Emit KDS update
+    // --------------------------------------------------
+    if (fullTickets.length > 0) {
 
       const io = req.app.get('io');
 
-      io.to(
-        `kds-room-${req.user.organizationId}`
-      ).emit(
-        'ticket-updated',
-        fullTickets
-      );
+      if (io) {
+
+        io.to(
+          `kds-room-${req.user.organizationId}`
+        ).emit(
+          'ticket-updated',
+          fullTickets
+        );
+      }
     }
 
     // --------------------------------------------------
@@ -1541,13 +1946,22 @@ router.put('/:id', verifyToken, requireWaiter, async (req, res) => {
     res.json(order);
 
   } catch (e) {
-    console.error('Update order error:', e);
+
+    console.error(
+      'Update order error:',
+      e
+    );
 
     res.status(500).json({
-      error: e.message || 'Something went wrong'
+      error:
+        e.message ||
+        'Something went wrong'
     });
   }
 });
+
+
+
 
 router.post('/:id/send-receipt', verifyToken, requireWaiter, async (req, res) => {
   try {

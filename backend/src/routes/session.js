@@ -24,6 +24,75 @@ router.get('/current', verifyToken, async (req, res) => {
   } catch (e) { res.status(500).json({ error: 'Something went wrong' }); }
 });
 
+/* GET /api/session/close-check ─────────────────────────── */
+router.get('/close-check', verifyToken, requireCashier, async (req, res) => {
+  try {
+    const session = await prisma.posSession.findFirst({
+      where: {
+        status: 'OPEN',
+        organizationId: req.user.organizationId,
+      },
+    });
+
+    if (!session) {
+      return res.status(404).json({
+        error: 'No open session',
+      });
+    }
+
+    // Only PAID and CANCELLED orders are considered finished.
+    const unfinishedOrders = await prisma.order.findMany({
+      where: {
+        sessionId: session.id,
+        organizationId: req.user.organizationId,
+        status: {
+          notIn: ['PAID', 'CANCELLED'],
+        },
+      },
+      select: {
+        id: true,
+        status: true,
+        total: true,
+        createdAt: true,
+      },
+      orderBy: {
+        createdAt: 'asc',
+      },
+    });
+
+    const draftCount = unfinishedOrders.filter(
+      order => order.status === 'DRAFT'
+    ).length;
+
+    const kitchenCount = unfinishedOrders.filter(
+      order => order.status === 'SENT_TO_KITCHEN'
+    ).length;
+
+    const readyCount = unfinishedOrders.filter(
+      order => order.status === 'READY'
+    ).length;
+
+    res.json({
+      canClose: unfinishedOrders.length === 0,
+      hasUnfinishedOrders: unfinishedOrders.length > 0,
+
+      unfinishedCount: unfinishedOrders.length,
+
+      draftCount,
+      kitchenCount,
+      readyCount,
+
+      orders: unfinishedOrders,
+    });
+
+  } catch (e) {
+    console.error('Close check error:', e);
+    res.status(500).json({
+      error: 'Something went wrong',
+    });
+  }
+});
+
 /* POST /api/session/open ───────────────────────────────── */
 router.post('/open', verifyToken, requireCashier, async (req, res) => {
   try {
@@ -64,13 +133,72 @@ router.post('/close', verifyToken, requireCashier, async (req, res) => {
     const durationMs = closedAt - new Date(session.openedAt);
 
     /* All orders belonging to this session */
-    const orders = await prisma.order.findMany({
-      where: { sessionId: session.id, organizationId: req.user.organizationId },
-      include: { lines: { include: { product: true } } },
-    });
+    // const orders = await prisma.order.findMany({
+    //   where: { sessionId: session.id, organizationId: req.user.organizationId },
+    //   include: { lines: { include: { product: true } } },
+    // });
 
-    /* Draft order warning count */
-    const draftCount = orders.filter(o => o.status === 'DRAFT').length;
+    // /* Draft order warning count */
+    // const draftCount = orders.filter(o => o.status === 'DRAFT').length;
+   
+    /* All orders belonging to this session */
+const orders = await prisma.order.findMany({
+  where: {
+    sessionId: session.id,
+    organizationId: req.user.organizationId,
+  },
+  include: {
+    lines: {
+      include: {
+        product: true,
+      },
+    },
+  },
+});
+
+/*
+ * A session can only be closed when every order is
+ * either PAID or CANCELLED.
+ */
+const unfinishedOrders = orders.filter(
+  order => order.status !== 'PAID' && order.status !== 'CANCELLED'
+);
+
+if (unfinishedOrders.length > 0) {
+  const draftCount = unfinishedOrders.filter(
+    order => order.status === 'DRAFT'
+  ).length;
+
+  const kitchenCount = unfinishedOrders.filter(
+    order => order.status === 'SENT_TO_KITCHEN'
+  ).length;
+
+  const readyCount = unfinishedOrders.filter(
+    order => order.status === 'READY'
+  ).length;
+
+  return res.status(409).json({
+    error: 'Cannot close session while unfinished orders exist.',
+    canClose: false,
+    hasUnfinishedOrders: true,
+    unfinishedCount: unfinishedOrders.length,
+    draftCount,
+    kitchenCount,
+    readyCount,
+
+    orders: unfinishedOrders.map(order => ({
+      id: order.id,
+      status: order.status,
+      total: order.total,
+    })),
+  });
+}
+
+/* All orders are now PAID or CANCELLED */
+const draftCount = 0;
+
+
+
 
     /* Paid orders only for financials */
     const paidOrders = orders.filter(o => o.status === 'PAID');
