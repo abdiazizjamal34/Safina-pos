@@ -94,24 +94,8 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => console.log('Client disconnected:', socket.id));
 });
 
-// server.listen(process.env.PORT || 5000, () => {
-//   console.log(`Cafe POS server running on port ${process.env.PORT}`);
 
-//   // Self-ping every 14 minutes to prevent Render free tier spin-down
-//   if (process.env.NODE_ENV === 'production' && process.env.RENDER_EXTERNAL_URL) {
-//     const pingUrl = `${process.env.RENDER_EXTERNAL_URL}/api/health`;
-//     setInterval(async () => {
-//       try {
-//         const res = await fetch(pingUrl);
-//         console.log(`[Self-ping] ${new Date().toISOString()} — status: ${res.status}`);
-//       } catch (err) {
-//         console.warn(`[Self-ping] Failed: ${err.message}`);
-//       }
-//     }, 14 * 60 * 1000); // every 14 minutes
-//     console.log(`[Self-ping] Enabled — pinging ${pingUrl} every 14 minutes`);
-//   }
-// });
-
+// commmets are not needed, but if you want to add them, you can do so here.
 
 // Add '0.0.0.0' right after the port definition
 server.listen(process.env.PORT || 5000, '0.0.0.0', () => {
