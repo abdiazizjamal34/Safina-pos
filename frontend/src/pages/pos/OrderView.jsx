@@ -8,7 +8,7 @@ import {
   Armchair, ShoppingBag, User, Ticket, ChefHat, Search,
   Loader2, CheckCircle2, Wallet, CreditCard, Smartphone,
   Printer, Coins, Sparkles, Coffee, ShoppingCart, AlertTriangle,
-  X, Mail, Plus, Check, MapPin, Home, Truck, Package, ClipboardList
+  X, Mail, Plus, Check, MapPin, Home, Truck, Package, ClipboardList, RotateCcw
 } from 'lucide-react';
 
 
@@ -897,76 +897,156 @@ useEffect(() => {
     couponCode: coupon?.code || null,
   });
 
-  /* ────── save draft ────── */
-  const saveDraft = useCallback(async () => {
-    if (!session) return;
-    // Guard against auto-saving orders that are already paid/cancelled (or not editable)
-    if (currentOrder && !EDITABLE_ORDER_STATUSES.includes(currentOrder.status)) return;
 
-    try {
-      const lines = cartItems.map(i => ({ productId: i.productId, quantity: i.quantity }));
-      const payload = getOrderPayload(lines);
-      if (currentOrder) {
-        if (EDITABLE_ORDER_STATUSES.includes(currentOrder.status)) {
-          const order = await api.put(`/orders/${currentOrder.id}`, payload);
-          setCurrentOrder(order);
-          onOrderUpdate?.(order);
-        }
-      } else {
-        const order = await api.post('/orders', {
-          ...payload,
-          sessionId: session.id,
-        });
-        setCurrentOrder(order);
-        onOrderUpdate?.(order);
-      }
-    } catch {}
-  }, [cartItems, session, table, customers, coupon, currentOrder, onOrderUpdate, orderType, deliveryLocation, customerNotes, roomNumber]);
 
-  /* debounce draft save */
-  useEffect(() => {
-    clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(saveDraft, 1500);
-    return () => clearTimeout(saveTimerRef.current);
-  }, [cartItems, coupon, customers, orderType, deliveryLocation, customerNotes, roomNumber, saveDraft]);
+ 
 
   /* ────── send to kitchen ────── */
+  // const handleSendKitchen = async () => {
+  //   if (!cartItems.length) return toast.error('Cart is empty');
+  //   if (!validateOrderDetails()) return;
+  //   setKitchenLoading(true);
+  //   try {
+  //     let order = currentOrder;
+  //     const lines = cartItems.map(i => ({ productId: i.productId, quantity: i.quantity }));
+  //     const payload = getOrderPayload(lines);
+  //     if (order) {
+  //       if (EDITABLE_ORDER_STATUSES.includes(order.status)) {
+  //         order = await api.put(`/orders/${order.id}`, payload);
+  //         setCurrentOrder(order);
+  //         onOrderUpdate?.(order);
+  //       }
+  //     } else {
+  //       order = await api.post('/orders', {
+  //         ...payload,
+  //         sessionId: session.id,
+  //       });
+  //       setCurrentOrder(order);
+  //       onOrderUpdate?.(order);
+  //     }
+  //     if (order.status === ORDER_STATUS.DRAFT) {
+  //       const updatedOrder = await api.put(`/orders/${order.id}/send-kitchen`);
+  //       setCurrentOrder(updatedOrder);
+  //       onOrderUpdate?.(updatedOrder);
+  //       toast.success('Order sent to kitchen!', {
+  //         icon: <ChefHat size={18} className="text-blue-400" />
+  //       });
+  //     } else {
+  //       toast.success('Order updated');
+  //     }
+  //   } catch (err) { toast.error(err?.error || err?.message || 'Failed to send to kitchen'); }
+  //   finally { setKitchenLoading(false); }
+  // };
+
   const handleSendKitchen = async () => {
-    if (!cartItems.length) return toast.error('Cart is empty');
-    if (!validateOrderDetails()) return;
-    setKitchenLoading(true);
-    try {
-      let order = currentOrder;
-      const lines = cartItems.map(i => ({ productId: i.productId, quantity: i.quantity }));
-      const payload = getOrderPayload(lines);
-      if (order) {
-        if (EDITABLE_ORDER_STATUSES.includes(order.status)) {
-          order = await api.put(`/orders/${order.id}`, payload);
-          setCurrentOrder(order);
-          onOrderUpdate?.(order);
-        }
-      } else {
-        order = await api.post('/orders', {
-          ...payload,
-          sessionId: session.id,
-        });
-        setCurrentOrder(order);
-        onOrderUpdate?.(order);
-      }
-      if (order.status === ORDER_STATUS.DRAFT) {
-        const updatedOrder = await api.put(`/orders/${order.id}/send-kitchen`);
+  if (!cartItems.length) {
+    return toast.error('Cart is empty');
+  }
+
+  if (!validateOrderDetails()) {
+    return;
+  }
+
+  setKitchenLoading(true);
+
+  try {
+    const lines = cartItems.map((item) => ({
+      productId: item.productId,
+      quantity: item.quantity,
+    }));
+
+    const payload = getOrderPayload(lines);
+
+    // ============================================
+    // EXISTING ORDER
+    // ============================================
+    if (currentOrder) {
+      let updatedOrder;
+
+      // DRAFT → send the existing order to kitchen
+      if (currentOrder.status === ORDER_STATUS.DRAFT) {
+        updatedOrder = await api.put(
+          `/orders/${currentOrder.id}/send-kitchen`
+        );
+
         setCurrentOrder(updatedOrder);
         onOrderUpdate?.(updatedOrder);
-        toast.success('Order sent to kitchen!', {
-          icon: <ChefHat size={18} className="text-blue-400" />
-        });
-      } else {
-        toast.success('Order updated');
-      }
-    } catch (err) { toast.error(err?.error || err?.message || 'Failed to send to kitchen'); }
-    finally { setKitchenLoading(false); }
-  };
 
+        toast.success('Order sent to kitchen!', {
+          icon: (
+            <ChefHat
+              size={18}
+              className="text-blue-400"
+            />
+          ),
+        });
+
+        return;
+      }
+
+      // SENT_TO_KITCHEN / READY → update only when
+      // the user clicks "Update Kitchen"
+      if (
+        currentOrder.status === ORDER_STATUS.SENT_TO_KITCHEN ||
+        currentOrder.status === ORDER_STATUS.READY
+      ) {
+        updatedOrder = await api.put(
+          `/orders/${currentOrder.id}`,
+          payload
+        );
+
+        setCurrentOrder(updatedOrder);
+        onOrderUpdate?.(updatedOrder);
+
+        toast.success('Kitchen order updated');
+
+        return;
+      }
+
+      // PAID or another non-editable status
+      return;
+    }
+
+    // ============================================
+    // NO EXISTING ORDER → CREATE DRAFT
+    // ============================================
+    const newOrder = await api.post('/orders', {
+      ...payload,
+      sessionId: session.id,
+    });
+
+    setCurrentOrder(newOrder);
+    onOrderUpdate?.(newOrder);
+
+    // Send newly created order to kitchen
+    const sentOrder = await api.put(
+      `/orders/${newOrder.id}/send-kitchen`
+    );
+
+    setCurrentOrder(sentOrder);
+    onOrderUpdate?.(sentOrder);
+
+    toast.success('Order sent to kitchen!', {
+      icon: (
+        <ChefHat
+          size={18}
+          className="text-blue-400"
+        />
+      ),
+    });
+  } catch (err) {
+    console.error('Failed to send/update kitchen:', err);
+
+    toast.error(
+      err?.response?.data?.message ||
+      err?.error ||
+      err?.message ||
+      'Failed to send to kitchen'
+    );
+  } finally {
+    setKitchenLoading(false);
+  }
+};
 
 const handlePay = async () => {
   // --------------------------------------------------
@@ -1777,13 +1857,73 @@ const handlePay = async () => {
                 : { background: WHITE, color: MUTED, borderColor: BORDER }}>
               <Ticket size={14} strokeWidth={2.5} /> {coupon ? coupon.code : 'Coupon'}
             </button> */}
+
+
             
-            <button onClick={handleSendKitchen} disabled={kitchenLoading || !cartItems.length}
+            {/* <button onClick={handleSendKitchen} disabled={kitchenLoading || !cartItems.length}
               className="h-11 flex items-center justify-center gap-1.5 rounded-xl text-sm font-black transition-all duration-200 border-2 disabled:opacity-40"
               style={{ background: '#EFF6FF', color: '#1D4ED8', borderColor: '#BFDBFE', boxShadow: `2px 2px 0px 0px ${FG}` }}>
               {kitchenLoading ? <Loader2 size={14} className="animate-spin" /> : <ChefHat size={14} strokeWidth={2.5} />}
               Kitchen
-            </button>
+            </button> */}
+
+     {currentOrder?.status !== ORDER_STATUS.PAID && (
+  <button
+    onClick={handleSendKitchen}
+    disabled={
+      kitchenLoading ||
+      !cartItems.length
+    }
+    className="h-11 flex items-center justify-center gap-1.5 rounded-xl text-sm font-black transition-all duration-200 border-2 disabled:opacity-40"
+    style={{
+      background:
+        currentOrder?.status === ORDER_STATUS.SENT_TO_KITCHEN ||
+        currentOrder?.status === ORDER_STATUS.READY
+          ? '#FEF3C7'
+          : '#EFF6FF',
+
+      color:
+        currentOrder?.status === ORDER_STATUS.SENT_TO_KITCHEN ||
+        currentOrder?.status === ORDER_STATUS.READY
+          ? '#B45309'
+          : '#1D4ED8',
+
+      borderColor:
+        currentOrder?.status === ORDER_STATUS.SENT_TO_KITCHEN ||
+        currentOrder?.status === ORDER_STATUS.READY
+          ? '#FCD34D'
+          : '#BFDBFE',
+
+      boxShadow: `2px 2px 0px 0px ${FG}`
+    }}
+  >
+    {kitchenLoading ? (
+      <Loader2
+        size={14}
+        className="animate-spin"
+      />
+    ) : currentOrder?.status === ORDER_STATUS.SENT_TO_KITCHEN ||
+      currentOrder?.status === ORDER_STATUS.READY ? (
+      <RotateCcw
+        size={14}
+        strokeWidth={2.5}
+      />
+    ) : (
+      <ChefHat
+        size={14}
+        strokeWidth={2.5}
+      />
+    )}
+
+    {currentOrder?.status === ORDER_STATUS.SENT_TO_KITCHEN ||
+    currentOrder?.status === ORDER_STATUS.READY
+      ? 'Update Kitchen'
+      : 'Kitchen'}
+  </button>
+)}
+
+
+
             {/* {allowPayment && currentOrder?.status === ORDER_STATUS.READY && <button onClick={() => {
               setShowPayment(true);
             }} disabled={!cartItems.length}

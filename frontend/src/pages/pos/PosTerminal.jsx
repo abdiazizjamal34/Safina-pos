@@ -95,6 +95,9 @@ export default function PosTerminal() {
   const sessionTimer = useSessionTimer(session?.openedAt);
   const canManageSession = hasRole(user, SESSION_ROLES);
 
+  const [closeCheck, setCloseCheck] = useState(null);
+const [closeCheckLoading, setCloseCheckLoading] = useState(false);
+
   const fetchDashStats = async () => {
     try {
       const data = await api.get('/reports/dashboard?period=today');
@@ -152,23 +155,84 @@ export default function PosTerminal() {
     logout(); navigate('/login'); toast.success('Logged out');
   };
 
-  const openCloseConfirm = async () => {
-    try { const { count } = await api.get('/session/draft-count'); setDraftCount(count); } catch { setDraftCount(0); }
-    setShowCloseConfirm(true); setMenuOpen(false);
-  };
+  // const openCloseConfirm = async () => {
+  //   try { const { count } = await api.get('/session/draft-count'); setDraftCount(count); } catch { setDraftCount(0); }
+  //   setShowCloseConfirm(true); setMenuOpen(false);
+  // };
 
-  const handleCloseSession = async () => {
-    setCloseLoading(true);
-    try {
-      await api.post('/session/close');
-      const summary = await api.get('/reports/dashboard?period=today');
-      setClosedSession(session); setClosingSummary(summary);
-      setSession(null); setShowCloseConfirm(false); setShowSummaryModal(true);
-      sessionStorage.removeItem('pos-active-tab');
-      toast.success('Session closed');
-    } catch (err) { toast.error(err.error || 'Failed to close session'); }
-    finally { setCloseLoading(false); }
-  };
+    const openCloseConfirm = async () => {
+  setMenuOpen(false);
+  setCloseCheckLoading(true);
+
+  try {
+    const result = await api.get('/session/close-check');
+
+    setCloseCheck(result);
+    setShowCloseConfirm(true);
+
+  } catch (err) {
+    toast.error(
+      err?.error ||
+      err?.message ||
+      'Could not check unfinished orders'
+    );
+  } finally {
+    setCloseCheckLoading(false);
+  }
+};
+
+
+  // const handleCloseSession = async () => {
+  //   setCloseLoading(true);
+  //   try {
+  //     await api.post('/session/close');
+  //     const summary = await api.get('/reports/dashboard?period=today');
+  //     setClosedSession(session); setClosingSummary(summary);
+  //     setSession(null); setShowCloseConfirm(false); setShowSummaryModal(true);
+  //     sessionStorage.removeItem('pos-active-tab');
+  //     toast.success('Session closed');
+  //   } catch (err) { toast.error(err.error || 'Failed to close session'); }
+  //   finally { setCloseLoading(false); }
+  // };
+  
+const handleCloseSession = async () => {
+  // Extra frontend protection
+  if (closeCheck?.hasUnfinishedOrders) {
+    toast.error(
+      'Cannot close session. Please finish all unpaid and kitchen orders first.'
+    );
+    return;
+  }
+
+  setCloseLoading(true);
+
+  try {
+    await api.post('/session/close');
+
+    const summary = await api.get(
+      '/reports/dashboard?period=today'
+    );
+
+    setClosedSession(session);
+    setClosingSummary(summary);
+    setSession(null);
+    setShowCloseConfirm(false);
+    setShowSummaryModal(true);
+
+    sessionStorage.removeItem('pos-active-tab');
+
+    toast.success('Session closed');
+
+  } catch (err) {
+    toast.error(
+      err?.error ||
+      err?.message ||
+      'Failed to close session'
+    );
+  } finally {
+    setCloseLoading(false);
+  }
+};
 
   const handleNewSession = async () => {
     try {
@@ -804,7 +868,7 @@ export default function PosTerminal() {
       )}
 
       {/* ── Close Session Confirm ── */}
-      <ConfirmDialog
+      {/* <ConfirmDialog
         isOpen={showCloseConfirm}
         onClose={() => setShowCloseConfirm(false)}
         onConfirm={handleCloseSession}
@@ -818,7 +882,71 @@ export default function PosTerminal() {
             ? `This will end the current POS session. Note: ${draftCount} draft order${draftCount !== 1 ? 's' : ''} will be abandoned.`
             : 'This will end the current POS session and generate a closing summary.'
         }
-      />
+      /> */}
+
+
+      <ConfirmDialog
+  isOpen={showCloseConfirm}
+  onClose={() => setShowCloseConfirm(false)}
+  onConfirm={handleCloseSession}
+  loading={closeLoading}
+  title={
+    closeCheck?.hasUnfinishedOrders
+      ? 'Cannot Close Session'
+      : 'Close Session?'
+  }
+  icon={<Lock size={18} strokeWidth={2.5} />}
+  confirmLabel={
+    closeCheck?.hasUnfinishedOrders
+      ? 'Close'
+      : 'Close Session'
+  }
+  confirmClass={
+    closeCheck?.hasUnfinishedOrders
+      ? 'bg-gray-400 cursor-not-allowed'
+      : 'bg-yellow-500 hover:bg-yellow-600'
+  }
+  message={
+    closeCheck?.hasUnfinishedOrders ? (
+      <div className="space-y-2">
+        <p className="font-medium text-red-600">
+          You cannot close this session yet.
+        </p>
+
+        <p>
+          There are {closeCheck.unfinishedCount} unfinished order
+          {closeCheck.unfinishedCount !== 1 ? 's' : ''}.
+          Please complete or cancel them first.
+        </p>
+
+        <div className="text-sm space-y-1">
+          {closeCheck.draftCount > 0 && (
+            <p>
+              • {closeCheck.draftCount} draft order
+              {closeCheck.draftCount !== 1 ? 's' : ''}
+            </p>
+          )}
+
+          {closeCheck.kitchenCount > 0 && (
+            <p>
+              • {closeCheck.kitchenCount} order
+              {closeCheck.kitchenCount !== 1 ? 's' : ''} in kitchen
+            </p>
+          )}
+
+          {closeCheck.readyCount > 0 && (
+            <p>
+              • {closeCheck.readyCount} ready order
+              {closeCheck.readyCount !== 1 ? 's' : ''}
+            </p>
+          )}
+        </div>
+      </div>
+    ) : (
+      'All orders are paid or cancelled. Are you sure you want to close this session and generate the closing summary?'
+    )
+  }
+/>
 
       <SessionSummaryModal
         isOpen={showSummaryModal}
