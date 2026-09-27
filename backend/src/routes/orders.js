@@ -1900,27 +1900,88 @@ router.put('/:id', verifyToken, requireWaiter, async (req, res) => {
     // This includes newly-created tickets.
     // --------------------------------------------------
 
-    const fullTickets = await prisma.kdsTicket.findMany({
-      where: {
-        orderId: order.id
-      },
+    // const fullTickets = await prisma.kdsTicket.findMany({
+    //   where: {
+    //     orderId: order.id
+    //   },
 
+    //   include: {
+    //     order: {
+    //       include: {
+    //         lines: {
+    //           include: {
+    //             product: true
+    //           }
+    //         },
+
+    //         table: true,
+
+    //         customers: true
+    //       }
+    //     }
+    //   }
+    // });
+
+    // --------------------------------------------------
+// 12. Notify KDS
+// --------------------------------------------------
+//
+// IMPORTANT:
+// Fetch ALL tickets after the update.
+//
+// This includes newly-created tickets.
+// --------------------------------------------------
+
+const fullTickets = await prisma.kdsTicket.findMany({
+  where: {
+    orderId: order.id
+  },
+
+  include: {
+    order: {
       include: {
-        order: {
+        lines: {
           include: {
-            lines: {
-              include: {
-                product: true
-              }
-            },
-
-            table: true,
-
-            customers: true
+            product: true
           }
-        }
+        },
+
+        table: true,
+
+        customers: true
       }
-    });
+    }
+  }
+});
+
+// --------------------------------------------------
+// Emit KDS update
+// --------------------------------------------------
+
+if (fullTickets.length > 0) {
+
+  const io = req.app.get('io');
+
+  if (io) {
+
+    io.to(
+      `kds-room-${req.user.organizationId}`
+    ).emit(
+      'ticket-updated',
+      {
+        source: 'POS',
+        reason: 'ORDER_UPDATED',
+        tickets: fullTickets
+      }
+    );
+  }
+}
+
+// --------------------------------------------------
+// 13. Return updated order
+// --------------------------------------------------
+
+res.json(order);
 
     // --------------------------------------------------
     // Emit KDS update
