@@ -325,13 +325,35 @@ router.post('/', verifyToken, requireWaiter, async (req, res) => {
     // --------------------------------------------------
     const finalLines = lines;
 
-    const ts = Date.now().toString().slice(-6);
-    const rand = Math.floor(Math.random() * 100)
-      .toString()
-      .padStart(2, '0');
+    // const ts = Date.now().toString().slice(-6);
+    // const rand = Math.floor(Math.random() * 100)
+    //   .toString()
+    //   .padStart(2, '0');
 
-    const orderNumber = `ORD-${ts}${rand}`;
+    // const orderNumber = `ORD-${ts}${rand}`;
 
+
+      const organizationId = req.user.organizationId;
+
+const sequence = await prisma.$transaction(async (tx) => {
+  const organization = await tx.organization.update({
+    where: {
+      id: organizationId
+    },
+    data: {
+      nextOrderNumber: {
+        increment: 1
+      }
+    },
+    select: {
+      nextOrderNumber: true
+    }
+  });
+
+  return organization.nextOrderNumber - 1;
+});
+
+const orderNumber = sequence.toString().padStart(7, '0');
     const {
       processedLines,
       subtotal,

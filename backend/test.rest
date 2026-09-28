@@ -8,7 +8,9 @@ Get localhost:5000/api/health
 
 
 ### login
-POST http://localhost:5000/api/auth/login
+##POST http://localhost:5000/api/auth/login
+POST http://192.168.1.24:5000/api/auth/login
+
 Content-Type: application/json  
 
 {

@@ -78,6 +78,8 @@ model Organization {
   name      String
   createdAt DateTime @default(now())
 
+  nextOrderNumber Int @default(1)
+
   users          User[]
   categories     ProductCategory[]
   products       Product[]
