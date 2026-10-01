@@ -1028,6 +1028,10 @@ useEffect(() => {
         />
       ),
     });
+  
+     setTimeout(() => {
+  window.location.reload();
+}, 1000);
   } catch (err) {
     console.error('Failed to send/update kitchen:', err);
 
