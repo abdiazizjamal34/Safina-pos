@@ -8,7 +8,7 @@ const { validateUUIDParam } = require('../middleware/validate');
 
 const prisma = new PrismaClient();
 
-router.param('customerId', validateUUIDParam());
+// router.param('customerId', validateUUIDParam());
 
 /**
  * =========================================================

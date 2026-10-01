@@ -27,5 +27,6 @@ router.post('/signup', signupValidation, ctrl.signup);
 router.post('/login',  limiter, loginValidation, ctrl.login);
 router.post('/refresh', ctrl.refresh);
 router.post('/logout',  ctrl.logout);
-
+router.get('/staff', ctrl.getLoginStaff);
+router.post('/pin-login', limiter, ctrl.pinLogin);
 module.exports = router;

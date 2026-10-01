@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const { PrismaClient } = require('@prisma/client');
+const { PrismaClient, Prisma  } = require('@prisma/client');
 const { verifyToken, requireWaiter } = require('../middleware/auth');
 const { applyPromotions } = require('../utils/promotionEngine');
 const { validateUUIDParam } = require('../middleware/validate');
@@ -613,357 +613,357 @@ router.put('/:id/cancel', verifyToken, requireWaiter, async (req, res) => {
 });
 
 
-router.put('/:id/pay', verifyToken, requireWaiter, async (req, res) => {
-   console.log('🔥 PAYMENT ROUTE HIT:', req.params.id);
-  try {
-    const { paymentMethod, paymentReference, payments } = req.body;
+// router.put('/:id/pay', verifyToken, requireWaiter, async (req, res) => {
+//    console.log('🔥 PAYMENT ROUTE HIT:', req.params.id);
+//   try {
+//     const { paymentMethod, paymentReference, payments } = req.body;
 
-    console.log('========== PAYMENT REQUEST ==========');
-    console.log('BODY:', req.body);
-    console.log('USER:', {
-      id: req.user?.id,
-      role: req.user?.role,
-      organizationId: req.user?.organizationId,
-    });
-    console.log('ORDER ID:', req.params.id);
-    console.log('=====================================');
+//     console.log('========== PAYMENT REQUEST ==========');
+//     console.log('BODY:', req.body);
+//     console.log('USER:', {
+//       id: req.user?.id,
+//       role: req.user?.role,
+//       organizationId: req.user?.organizationId,
+//     });
+//     console.log('ORDER ID:', req.params.id);
+//     console.log('=====================================');
 
-    // --------------------------------------------------
-    // 1. Validate payment input
-    // --------------------------------------------------
-    if (
-      !paymentMethod &&
-      (!Array.isArray(payments) || payments.length === 0)
-    ) {
-      return res.status(400).json({
-        error: 'Payment method or payments array required',
-      });
-    }
+//     // --------------------------------------------------
+//     // 1. Validate payment input
+//     // --------------------------------------------------
+//     if (
+//       !paymentMethod &&
+//       (!Array.isArray(payments) || payments.length === 0)
+//     ) {
+//       return res.status(400).json({
+//         error: 'Payment method or payments array required',
+//       });
+//     }
 
-    // --------------------------------------------------
-    // 2. Find the order inside user's organization
-    // --------------------------------------------------
-    const existingOrder = await prisma.order.findFirst({
-      where: {
-        id: req.params.id,
-        organizationId: req.user.organizationId,
-      },
-    });
+//     // --------------------------------------------------
+//     // 2. Find the order inside user's organization
+//     // --------------------------------------------------
+//     const existingOrder = await prisma.order.findFirst({
+//       where: {
+//         id: req.params.id,
+//         organizationId: req.user.organizationId,
+//       },
+//     });
 
-    if (!existingOrder) {
-      return res.status(404).json({
-        error: 'Order not found',
-      });
-    }
+//     if (!existingOrder) {
+//       return res.status(404).json({
+//         error: 'Order not found',
+//       });
+//     }
 
-    // --------------------------------------------------
-// PAYMENT DEBUG
-// --------------------------------------------------
-console.log('========== BACKEND PAYMENT DEBUG ==========');
-console.log('BODY:', req.body);
-console.log('PAYMENT METHOD:', paymentMethod);
-console.log('PAYMENTS:', payments);
-console.log('ORDER TOTAL:', existingOrder.total);
-console.log('ORDER STATUS:', existingOrder.status);
-console.log('ORDER TOTAL NUMBER:', Number(existingOrder.total));
-console.log(
-  'IS FINITE:',
-  Number.isFinite(Number(existingOrder.total))
-);
-console.log('===========================================');
-    // --------------------------------------------------
-    // 3. Only READY orders can be paid
-    // --------------------------------------------------
-    if (existingOrder.status !== 'READY') {
-      return res.status(400).json({
-        error: `Only ready orders can be paid. Current status: ${existingOrder.status}`,
-      });
-    }
+//     // --------------------------------------------------
+// // PAYMENT DEBUG
+// // --------------------------------------------------
+// console.log('========== BACKEND PAYMENT DEBUG ==========');
+// console.log('BODY:', req.body);
+// console.log('PAYMENT METHOD:', paymentMethod);
+// console.log('PAYMENTS:', payments);
+// console.log('ORDER TOTAL:', existingOrder.total);
+// console.log('ORDER STATUS:', existingOrder.status);
+// console.log('ORDER TOTAL NUMBER:', Number(existingOrder.total));
+// console.log(
+//   'IS FINITE:',
+//   Number.isFinite(Number(existingOrder.total))
+// );
+// console.log('===========================================');
+//     // --------------------------------------------------
+//     // 3. Only READY orders can be paid
+//     // --------------------------------------------------
+//     if (existingOrder.status !== 'READY') {
+//       return res.status(400).json({
+//         error: `Only ready orders can be paid. Current status: ${existingOrder.status}`,
+//       });
+//     }
 
-    // --------------------------------------------------
-    // 4. Build normalized payment records
-    // --------------------------------------------------
-    let paymentRecords = [];
+//     // --------------------------------------------------
+//     // 4. Build normalized payment records
+//     // --------------------------------------------------
+//     let paymentRecords = [];
 
-    if (Array.isArray(payments) && payments.length > 0) {
-      paymentRecords = payments.map((payment) => ({
-        amount: Number(payment.amount),
-        method:
-          typeof payment.method === 'string'
-            ? payment.method.trim()
-            : payment.method,
-        paymentReference:
-          payment.reference ||
-          payment.paymentReference ||
-          null,
-      }));
-    } else {
-      // Single payment
-      paymentRecords = [
-        {
-          amount: Number(existingOrder.total),
-          method:
-            typeof paymentMethod === 'string'
-              ? paymentMethod.trim()
-              : paymentMethod,
-          paymentReference: paymentReference || null,
-        },
-      ];
-    }
+//     if (Array.isArray(payments) && payments.length > 0) {
+//       paymentRecords = payments.map((payment) => ({
+//         amount: Number(payment.amount),
+//         method:
+//           typeof payment.method === 'string'
+//             ? payment.method.trim()
+//             : payment.method,
+//         paymentReference:
+//           payment.reference ||
+//           payment.paymentReference ||
+//           null,
+//       }));
+//     } else {
+//       // Single payment
+//       paymentRecords = [
+//         {
+//           amount: Number(existingOrder.total),
+//           method:
+//             typeof paymentMethod === 'string'
+//               ? paymentMethod.trim()
+//               : paymentMethod,
+//           paymentReference: paymentReference || null,
+//         },
+//       ];
+//     }
 
-    console.log('NORMALIZED PAYMENT RECORDS:', paymentRecords);
+//     console.log('NORMALIZED PAYMENT RECORDS:', paymentRecords);
 
-    // --------------------------------------------------
-    // 5. Validate each payment
-    // --------------------------------------------------
-    const invalidPayment = paymentRecords.find(
-      (payment) =>
-        !Number.isFinite(payment.amount) ||
-        payment.amount <= 0 ||
-        !payment.method ||
-        typeof payment.method !== 'string'
-    );
+//     // --------------------------------------------------
+//     // 5. Validate each payment
+//     // --------------------------------------------------
+//     const invalidPayment = paymentRecords.find(
+//       (payment) =>
+//         !Number.isFinite(payment.amount) ||
+//         payment.amount <= 0 ||
+//         !payment.method ||
+//         typeof payment.method !== 'string'
+//     );
 
-    if (invalidPayment) {
-      console.error('INVALID PAYMENT:', invalidPayment);
+//     if (invalidPayment) {
+//       console.error('INVALID PAYMENT:', invalidPayment);
 
-      return res.status(400).json({
-        error: 'Payments must have a valid method and positive amount',
-        details: {
-          amount: invalidPayment.amount,
-          method: invalidPayment.method,
-        },
-      });
-    }
+//       return res.status(400).json({
+//         error: 'Payments must have a valid method and positive amount',
+//         details: {
+//           amount: invalidPayment.amount,
+//           method: invalidPayment.method,
+//         },
+//       });
+//     }
 
-    // --------------------------------------------------
-    // 6. Validate payment total
-    // --------------------------------------------------
-    const orderTotal = Number(existingOrder.total);
+//     // --------------------------------------------------
+//     // 6. Validate payment total
+//     // --------------------------------------------------
+//     const orderTotal = Number(existingOrder.total);
 
-    const totalPaid = paymentRecords.reduce(
-      (sum, payment) => sum + payment.amount,
-      0
-    );
+//     const totalPaid = paymentRecords.reduce(
+//       (sum, payment) => sum + payment.amount,
+//       0
+//     );
 
-    console.log('ORDER TOTAL:', orderTotal);
-    console.log('TOTAL PAID:', totalPaid);
+//     console.log('ORDER TOTAL:', orderTotal);
+//     console.log('TOTAL PAID:', totalPaid);
 
-    if (!Number.isFinite(orderTotal)) {
-      return res.status(500).json({
-        error: 'Invalid order total',
-      });
-    }
+//     if (!Number.isFinite(orderTotal)) {
+//       return res.status(500).json({
+//         error: 'Invalid order total',
+//       });
+//     }
 
-    if (Math.abs(totalPaid - orderTotal) > 0.01) {
-      return res.status(400).json({
-        error: 'Payment total must equal order total',
-        orderTotal,
-        totalPaid,
-      });
-    }
+//     if (Math.abs(totalPaid - orderTotal) > 0.01) {
+//       return res.status(400).json({
+//         error: 'Payment total must equal order total',
+//         orderTotal,
+//         totalPaid,
+//       });
+//     }
 
-    // --------------------------------------------------
-    // 7. Find enabled payment methods
-    // --------------------------------------------------
-    const paymentMethodNames = [
-      ...new Set(
-        paymentRecords.map((payment) => payment.method)
-      ),
-    ];
+//     // --------------------------------------------------
+//     // 7. Find enabled payment methods
+//     // --------------------------------------------------
+//     const paymentMethodNames = [
+//       ...new Set(
+//         paymentRecords.map((payment) => payment.method)
+//       ),
+//     ];
 
-    console.log(
-      'PAYMENT METHOD NAMES:',
-      paymentMethodNames
-    );
+//     console.log(
+//       'PAYMENT METHOD NAMES:',
+//       paymentMethodNames
+//     );
 
-    const methods = await prisma.paymentMethod.findMany({
-      where: {
-        organizationId: req.user.organizationId,
-        name: {
-          in: paymentMethodNames,
-        },
-        isEnabled: true,
-      },
-    });
+//     const methods = await prisma.paymentMethod.findMany({
+//       where: {
+//         organizationId: req.user.organizationId,
+//         name: {
+//           in: paymentMethodNames,
+//         },
+//         isEnabled: true,
+//       },
+//     });
 
-    console.log('AVAILABLE PAYMENT METHODS:', methods);
+//     console.log('AVAILABLE PAYMENT METHODS:', methods);
 
-    const methodByName = new Map(
-      methods.map((method) => [
-        method.name,
-        method,
-      ])
-    );
+//     const methodByName = new Map(
+//       methods.map((method) => [
+//         method.name,
+//         method,
+//       ])
+//     );
 
-    // --------------------------------------------------
-    // 8. Check that all payment methods exist
-    // --------------------------------------------------
-    const unavailableMethods = paymentRecords
-      .filter(
-        (payment) =>
-          !methodByName.has(payment.method)
-      )
-      .map((payment) => payment.method);
+//     // --------------------------------------------------
+//     // 8. Check that all payment methods exist
+//     // --------------------------------------------------
+//     const unavailableMethods = paymentRecords
+//       .filter(
+//         (payment) =>
+//           !methodByName.has(payment.method)
+//       )
+//       .map((payment) => payment.method);
 
-    if (unavailableMethods.length > 0) {
-      return res.status(400).json({
-        error: 'One or more payment methods are unavailable',
-        unavailableMethods,
-        availableMethods: methods.map(
-          (method) => method.name
-        ),
-      });
-    }
+//     if (unavailableMethods.length > 0) {
+//       return res.status(400).json({
+//         error: 'One or more payment methods are unavailable',
+//         unavailableMethods,
+//         availableMethods: methods.map(
+//           (method) => method.name
+//         ),
+//       });
+//     }
 
-    // --------------------------------------------------
-    // 9. Atomically mark order as PAID
-    // --------------------------------------------------
-    const order = await prisma.$transaction(
-      async (tx) => {
-        // Claim the order first.
-        // This prevents two users from paying the same
-        // order at the same time.
-        const claimed = await tx.order.updateMany({
-          where: {
-            id: req.params.id,
-            organizationId: req.user.organizationId,
-            status: 'READY',
-          },
-          data: {
-            status: 'PAID',
-            paymentMethod:
-              paymentMethod || 'SPLIT',
-            paymentReference:
-              paymentReference ||
-              'Split Payments',
-          },
-        });
+//     // --------------------------------------------------
+//     // 9. Atomically mark order as PAID
+//     // --------------------------------------------------
+//     const order = await prisma.$transaction(
+//       async (tx) => {
+//         // Claim the order first.
+//         // This prevents two users from paying the same
+//         // order at the same time.
+//         const claimed = await tx.order.updateMany({
+//           where: {
+//             id: req.params.id,
+//             organizationId: req.user.organizationId,
+//             status: 'READY',
+//           },
+//           data: {
+//             status: 'PAID',
+//             paymentMethod:
+//               paymentMethod || 'SPLIT',
+//             paymentReference:
+//               paymentReference ||
+//               'Split Payments',
+//           },
+//         });
 
-        if (claimed.count !== 1) {
-          const error = new Error(
-            'Order is no longer ready for payment'
-          );
+//         if (claimed.count !== 1) {
+//           const error = new Error(
+//             'Order is no longer ready for payment'
+//           );
 
-          error.status = 409;
+//           error.status = 409;
 
-          throw error;
-        }
+//           throw error;
+//         }
 
-        // --------------------------------------------------
-        // Create payment records
-        // --------------------------------------------------
-        const updated = await tx.order.update({
-          where: {
-            id: req.params.id,
-          },
+//         // --------------------------------------------------
+//         // Create payment records
+//         // --------------------------------------------------
+//         const updated = await tx.order.update({
+//           where: {
+//             id: req.params.id,
+//           },
 
-          data: {
-            payments: {
-              create: paymentRecords.map(
-                (payment) => ({
-                  amount: payment.amount,
+//           data: {
+//             payments: {
+//               create: paymentRecords.map(
+//                 (payment) => ({
+//                   amount: payment.amount,
 
-                  paymentMethodId:
-                    methodByName.get(
-                      payment.method
-                    ).id,
+//                   paymentMethodId:
+//                     methodByName.get(
+//                       payment.method
+//                     ).id,
 
-                  paymentReference:
-                    payment.paymentReference,
-                })
-              ),
-            },
-          },
+//                   paymentReference:
+//                     payment.paymentReference,
+//                 })
+//               ),
+//             },
+//           },
 
-          include: {
-            lines: {
-              include: {
-                product: true,
-              },
-            },
+//           include: {
+//             lines: {
+//               include: {
+//                 product: true,
+//               },
+//             },
 
-            customers: true,
+//             customers: true,
 
-            table: true,
+//             table: true,
 
-            payments: true,
-          },
-        });
+//             payments: true,
+//           },
+//         });
 
-        // --------------------------------------------------
-        // Free the restaurant table
-        // --------------------------------------------------
-        if (updated.tableId) {
-          await tx.table.update({
-            where: {
-              id: updated.tableId,
-            },
+//         // --------------------------------------------------
+//         // Free the restaurant table
+//         // --------------------------------------------------
+//         if (updated.tableId) {
+//           await tx.table.update({
+//             where: {
+//               id: updated.tableId,
+//             },
 
-            data: {
-              currentOrderId: null,
-            },
-          });
-        }
+//             data: {
+//               currentOrderId: null,
+//             },
+//           });
+//         }
 
-        // --------------------------------------------------
-        // Update POS session statistics
-        // --------------------------------------------------
-        await tx.posSession.update({
-          where: {
-            id: updated.sessionId,
-          },
+//         // --------------------------------------------------
+//         // Update POS session statistics
+//         // --------------------------------------------------
+//         await tx.posSession.update({
+//           where: {
+//             id: updated.sessionId,
+//           },
 
-          data: {
-            lastSaleAmount: updated.total,
+//           data: {
+//             lastSaleAmount: updated.total,
 
-            totalOrders: {
-              increment: 1,
-            },
+//             totalOrders: {
+//               increment: 1,
+//             },
 
-            totalRevenue: {
-              increment: updated.total,
-            },
-          },
-        });
+//             totalRevenue: {
+//               increment: updated.total,
+//             },
+//           },
+//         });
 
-        return updated;
-      }
-    );
+//         return updated;
+//       }
+//     );
 
-    // --------------------------------------------------
-    // 10. Notify connected KDS clients
-    // --------------------------------------------------
-    const io = req.app.get('io');
+//     // --------------------------------------------------
+//     // 10. Notify connected KDS clients
+//     // --------------------------------------------------
+//     const io = req.app.get('io');
 
-    if (io) {
-      io.to(
-        `kds-room-${req.user.organizationId}`
-      ).emit('order-paid', {
-        orderId: order.id,
-      });
-    }
+//     if (io) {
+//       io.to(
+//         `kds-room-${req.user.organizationId}`
+//       ).emit('order-paid', {
+//         orderId: order.id,
+//       });
+//     }
 
-    // --------------------------------------------------
-    // 11. Return successful payment
-    // --------------------------------------------------
-    return res.json(order);
+//     // --------------------------------------------------
+//     // 11. Return successful payment
+//     // --------------------------------------------------
+//     return res.json(order);
 
-  } catch (error) {
-    console.error(
-      'PAYMENT ERROR:',
-      error
-    );
+//   } catch (error) {
+//     console.error(
+//       'PAYMENT ERROR:',
+//       error
+//     );
 
-    return res.status(
-      error.status || 500
-    ).json({
-      error:
-        error.message ||
-        'Something went wrong while processing payment',
-    });
-  }
-});
+//     return res.status(
+//       error.status || 500
+//     ).json({
+//       error:
+//         error.message ||
+//         'Something went wrong while processing payment',
+//     });
+//   }
+// });
 
 
 // order update route
@@ -1496,6 +1496,721 @@ console.log('===========================================');
 //   }
 // });
 
+ 
+
+
+router.put('/:id/pay', verifyToken, requireWaiter, async (req, res) => {
+  try {
+    const {
+      paymentMethod,
+      paymentReference,
+      payments,
+      onCredit = false,
+      customerIds,
+      customerId,
+    } = req.body;
+
+    const organizationId = req.user.organizationId;
+    const orderId = req.params.id;
+
+    // ---------------------------------------------------------
+    // 1. Find order
+    // ---------------------------------------------------------
+
+    const existingOrder = await prisma.order.findFirst({
+      where: {
+        id: orderId,
+        organizationId,
+      },
+      include: {
+        customers: true,
+        payments: true,
+        loan: true,
+      },
+    });
+
+    if (!existingOrder) {
+      return res.status(404).json({
+        message: 'Order not found',
+      });
+    }
+
+    if (existingOrder.status !== 'READY') {
+      return res.status(400).json({
+        message: `Only READY orders can be paid. Current status: ${existingOrder.status}`,
+      });
+    }
+
+    // ---------------------------------------------------------
+    // 1b. NEW: Attach customer(s) sent with the payment.
+    //
+    // This lets the cashier assign a customer at the moment
+    // of payment (e.g. for putting the bill on credit) without
+    // needing to re-save the order first.
+    // ---------------------------------------------------------
+
+    let customerConnect = [];
+
+    if (Array.isArray(customerIds)) {
+      customerConnect = customerIds.map((id) => ({ id }));
+    } else if (Array.isArray(customerId)) {
+      customerConnect = customerId.map((id) => ({ id }));
+    } else if (customerId) {
+      customerConnect = [{ id: customerId }];
+    }
+
+    if (customerConnect.length > 0) {
+      // Verify customers belong to this organization
+      const validCustomers = await prisma.customer.findMany({
+        where: {
+          id: { in: customerConnect.map((c) => c.id) },
+          organizationId,
+        },
+        select: { id: true },
+      });
+
+      if (validCustomers.length !== customerConnect.length) {
+        return res.status(404).json({
+          message: 'One or more customers not found',
+        });
+      }
+
+      // Attach them to the order
+      const updatedOrderWithCustomer = await prisma.order.update({
+        where: { id: orderId },
+        data: {
+          customers: { set: customerConnect },
+        },
+        include: {
+          customers: true,
+          payments: true,
+          loan: true,
+        },
+      });
+
+      // Update existingOrder in-memory so the rest of this route
+      // sees the newly attached customers
+      existingOrder.customers = updatedOrderWithCustomer.customers;
+    }
+
+    // ---------------------------------------------------------
+    // 2. Calculate current payment state
+    // ---------------------------------------------------------
+
+    const orderTotal = Number(existingOrder.total);
+
+    const alreadyPaid = existingOrder.payments.reduce(
+      (sum, payment) => sum + Number(payment.amount),
+      0
+    );
+
+    const existingLoanAmount = existingOrder.loan
+      ? Number(existingOrder.loan.remainingAmount)
+      : 0;
+
+    const remainingBeforePayment = Number(
+      Math.max(orderTotal - alreadyPaid, 0).toFixed(2)
+    );
+
+    if (remainingBeforePayment <= 0.01) {
+      return res.status(400).json({
+        message: 'This order is already fully paid',
+      });
+    }
+
+    // ---------------------------------------------------------
+    // 3. Normalize payments
+    // ---------------------------------------------------------
+
+    let paymentRecords = [];
+
+    if (Array.isArray(payments) && payments.length > 0) {
+      paymentRecords = payments.map((payment) => ({
+        method: String(
+          payment.method || payment.paymentMethod || ''
+        ).trim(),
+
+        amount: Number(payment.amount),
+
+        reference:
+          payment.reference ||
+          payment.paymentReference ||
+          paymentReference ||
+          null,
+      }));
+    } else if (paymentMethod) {
+      paymentRecords = [
+        {
+          method: String(paymentMethod).trim(),
+
+          amount:
+            req.body.amount !== undefined
+              ? Number(req.body.amount)
+              : remainingBeforePayment,
+
+          reference: paymentReference || null,
+        },
+      ];
+    }
+
+    if (paymentRecords.length === 0 && !onCredit) {
+      return res.status(400).json({
+        message: 'Payment method or payments are required',
+      });
+    }
+
+    // ---------------------------------------------------------
+    // 4. Validate payment records
+    // ---------------------------------------------------------
+
+    // Credit methods are allowed to have amount 0 (full credit).
+    // They are validated later as part of the credit flow.
+    const CREDIT_METHOD_NAMES = new Set([
+      'CREDIT',
+      'LOAN',
+      'ON_ACCOUNT',
+    ]);
+
+    for (const payment of paymentRecords) {
+      if (!payment.method) {
+        return res.status(400).json({
+          message: 'Every payment must have a payment method',
+        });
+      }
+
+      const isCreditMethod = CREDIT_METHOD_NAMES.has(
+        String(payment.method).trim().toUpperCase()
+      );
+
+      // Skip amount check for credit methods —
+      // the credit amount is computed separately below.
+      if (isCreditMethod) continue;
+
+      if (
+        !Number.isFinite(payment.amount) ||
+        payment.amount <= 0
+      ) {
+        return res.status(400).json({
+          message: 'Every payment amount must be greater than 0',
+        });
+      }
+    }
+
+    // ---------------------------------------------------------
+    // 5. Credit methods
+    // ---------------------------------------------------------
+
+    const CREDIT_METHODS = new Set([
+      'CREDIT',
+      'LOAN',
+      'ON_ACCOUNT',
+    ]);
+
+    const isCreditPayment = (method) =>
+      CREDIT_METHODS.has(
+        String(method || '').trim().toUpperCase()
+      );
+
+    // ---------------------------------------------------------
+    // 6. Separate real payments from credit
+    // ---------------------------------------------------------
+
+    const actualPaymentRecords = paymentRecords.filter(
+      (payment) => !isCreditPayment(payment.method)
+    );
+
+    const explicitCreditRecords = paymentRecords.filter(
+      (payment) => isCreditPayment(payment.method)
+    );
+
+    const actualPaymentAmount = actualPaymentRecords.reduce(
+      (sum, payment) => sum + payment.amount,
+      0
+    );
+
+    const explicitCreditAmount = explicitCreditRecords.reduce(
+      (sum, payment) => sum + payment.amount,
+      0
+    );
+
+    // ---------------------------------------------------------
+    // 7. Validate payment doesn't exceed order balance
+    // ---------------------------------------------------------
+
+    const totalAttempted = Number(
+      (actualPaymentAmount + explicitCreditAmount).toFixed(2)
+    );
+
+    if (totalAttempted > remainingBeforePayment + 0.01) {
+      return res.status(400).json({
+        message: `Payment exceeds remaining balance of ${remainingBeforePayment.toFixed(
+          2
+        )}`,
+        remaining: remainingBeforePayment,
+        attempted: totalAttempted,
+      });
+    }
+
+    // ---------------------------------------------------------
+    // 8. Automatic credit
+    //
+    // Example:
+    //
+    // Order = 1000
+    // Cash  = 400
+    // onCredit = true
+    //
+    // Credit automatically becomes 600.
+    // ---------------------------------------------------------
+
+    let automaticCreditAmount = 0;
+
+    if (onCredit) {
+      const unpaidAfterRealPayments = Number(
+        (
+          remainingBeforePayment -
+          actualPaymentAmount -
+          explicitCreditAmount
+        ).toFixed(2)
+      );
+
+      if (unpaidAfterRealPayments > 0.01) {
+        automaticCreditAmount = unpaidAfterRealPayments;
+      }
+    }
+
+    const creditAmount = Number(
+      (explicitCreditAmount + automaticCreditAmount).toFixed(2)
+    );
+
+    // ---------------------------------------------------------
+    // 9. Customer required for credit
+    // ---------------------------------------------------------
+
+    if (creditAmount > 0.01) {
+      if (
+        !existingOrder.customers ||
+        existingOrder.customers.length === 0
+      ) {
+        return res.status(400).json({
+          message:
+            'A customer is required when putting an order on credit',
+        });
+      }
+
+      if (existingOrder.customers.length !== 1) {
+        return res.status(400).json({
+          message:
+            'Credit orders must have exactly one customer account',
+        });
+      }
+    }
+
+    // ---------------------------------------------------------
+    // 10. Calculate total amount that settles the order
+    //
+    // Credit counts as settlement of the order because
+    // the customer now owes the restaurant.
+    // ---------------------------------------------------------
+
+    const settlementAmount = Number(
+      (actualPaymentAmount + creditAmount).toFixed(2)
+    );
+
+    const newPaidAmount = Number(
+      (alreadyPaid + settlementAmount).toFixed(2)
+    );
+
+    const fullySettled = newPaidAmount >= orderTotal - 0.01;
+
+    // ---------------------------------------------------------
+    // 11. Validate normal payment methods
+    // ---------------------------------------------------------
+
+    const normalMethodNames = [
+      ...new Set(
+        actualPaymentRecords.map((payment) =>
+          payment.method.trim()
+        )
+      ),
+    ];
+
+    const paymentMethods =
+      normalMethodNames.length > 0
+        ? await prisma.paymentMethod.findMany({
+            where: {
+              organizationId,
+              isEnabled: true,
+              name: {
+                in: normalMethodNames,
+              },
+            },
+          })
+        : [];
+
+    const paymentMethodMap = new Map(
+      paymentMethods.map((method) => [
+        method.name.toLowerCase(),
+        method,
+      ])
+    );
+
+    for (const payment of actualPaymentRecords) {
+      const method = paymentMethodMap.get(
+        payment.method.toLowerCase()
+      );
+
+      if (!method) {
+        return res.status(400).json({
+          message: `Payment method "${payment.method}" is not available`,
+        });
+      }
+    }
+
+    // ---------------------------------------------------------
+    // 12. Transaction
+    // ---------------------------------------------------------
+
+    const result = await prisma.$transaction(
+      async (tx) => {
+        // -----------------------------------------------------
+        // Re-check the order inside transaction.
+        //
+        // This protects against two cashiers paying the same
+        // order at the same time.
+        // -----------------------------------------------------
+
+        const lockedOrder = await tx.order.findFirst({
+          where: {
+            id: orderId,
+            organizationId,
+          },
+          include: {
+            payments: true,
+            loan: true,
+            customers: true,
+          },
+        });
+
+        if (!lockedOrder) {
+          const error = new Error('Order not found');
+          error.status = 404;
+          throw error;
+        }
+
+        if (lockedOrder.status !== 'READY') {
+          const error = new Error(
+            'Order is no longer ready for payment'
+          );
+          error.status = 409;
+          throw error;
+        }
+
+        const lockedAlreadyPaid = lockedOrder.payments.reduce(
+          (sum, payment) => sum + Number(payment.amount),
+          0
+        );
+
+        const lockedRemaining = Number(
+          (
+            Number(lockedOrder.total) - lockedAlreadyPaid
+          ).toFixed(2)
+        );
+
+        if (settlementAmount > lockedRemaining + 0.01) {
+          const error = new Error(
+            `Payment exceeds remaining balance of ${lockedRemaining.toFixed(
+              2
+            )}`
+          );
+          error.status = 409;
+          throw error;
+        }
+
+        // -----------------------------------------------------
+        // Determine order payment information
+        // -----------------------------------------------------
+
+        const orderUpdateData = {};
+
+        if (fullySettled) {
+          orderUpdateData.status = 'PAID';
+
+          const hasCredit = creditAmount > 0.01;
+          const hasNormalPayments =
+            actualPaymentRecords.length > 0;
+
+          if (hasCredit && hasNormalPayments) {
+            orderUpdateData.paymentMethod = 'SPLIT';
+            orderUpdateData.paymentReference = 'Split + Credit';
+          } else if (hasCredit) {
+            orderUpdateData.paymentMethod = 'CREDIT';
+            orderUpdateData.paymentReference =
+              'Customer Account';
+          } else if (actualPaymentRecords.length === 1) {
+            orderUpdateData.paymentMethod =
+              actualPaymentRecords[0].method;
+
+            orderUpdateData.paymentReference =
+              actualPaymentRecords[0].reference || null;
+          } else {
+            orderUpdateData.paymentMethod = 'SPLIT';
+            orderUpdateData.paymentReference =
+              'Split Payments';
+          }
+        }
+
+        // -----------------------------------------------------
+        // Update order
+        // -----------------------------------------------------
+
+        const updatedOrder = await tx.order.update({
+          where: {
+            id: orderId,
+          },
+          data: orderUpdateData,
+        });
+
+        // -----------------------------------------------------
+        // Create normal Payment records
+        // -----------------------------------------------------
+
+        if (actualPaymentRecords.length > 0) {
+          await tx.payment.createMany({
+            data: actualPaymentRecords.map((payment) => ({
+              orderId,
+
+              paymentMethodId: paymentMethodMap.get(
+                payment.method.toLowerCase()
+              ).id,
+
+              amount: payment.amount,
+
+              paymentReference: payment.reference,
+            })),
+          });
+        }
+
+        // -----------------------------------------------------
+        // Create/update Loan
+        // -----------------------------------------------------
+
+        if (creditAmount > 0.01) {
+          const customerId = lockedOrder.customers[0].id;
+
+          const existingLoan = await tx.loan.findUnique({
+            where: {
+              orderId,
+            },
+          });
+
+          if (existingLoan) {
+            const newRemaining = Number(
+              (
+                Number(existingLoan.remainingAmount) +
+                creditAmount
+              ).toFixed(2)
+            );
+
+            await tx.loan.update({
+              where: {
+                id: existingLoan.id,
+              },
+              data: {
+                originalAmount: {
+                  increment: creditAmount,
+                },
+
+                remainingAmount: newRemaining,
+
+                status:
+                  newRemaining <= 0.01
+                    ? 'PAID'
+                    : 'PARTIALLY_PAID',
+              },
+            });
+          } else {
+            await tx.loan.create({
+              data: {
+                customerId,
+
+                orderId,
+
+                organizationId,
+
+                originalAmount: creditAmount,
+
+                paidAmount: 0,
+
+                remainingAmount: creditAmount,
+
+                status: 'PENDING',
+              },
+            });
+          }
+        }
+
+        // -----------------------------------------------------
+        // Close table and update session only when order is
+        // completely settled.
+        // -----------------------------------------------------
+
+        if (fullySettled) {
+          if (lockedOrder.tableId) {
+            await tx.table.update({
+              where: {
+                id: lockedOrder.tableId,
+              },
+              data: {
+                currentOrderId: null,
+              },
+            });
+          }
+
+          await tx.posSession.update({
+            where: {
+              id: lockedOrder.sessionId,
+            },
+            data: {
+              lastSaleAmount: lockedOrder.total,
+
+              totalOrders: {
+                increment: 1,
+              },
+
+              totalRevenue: {
+                increment: lockedOrder.total,
+              },
+            },
+          });
+        }
+
+        return updatedOrder;
+      },
+
+      {
+        isolationLevel:
+          Prisma.TransactionIsolationLevel.Serializable,
+      }
+    );
+
+    // ---------------------------------------------------------
+    // 13. Get complete updated order
+    // ---------------------------------------------------------
+
+    const completeOrder = await prisma.order.findUnique({
+      where: {
+        id: orderId,
+      },
+      include: {
+        lines: {
+          include: {
+            product: true,
+          },
+        },
+
+        customers: true,
+
+        table: true,
+
+        payments: {
+          include: {
+            paymentMethod: true,
+          },
+        },
+
+        loan: true,
+      },
+    });
+
+    // ---------------------------------------------------------
+    // 14. Calculate final payment summary
+    // ---------------------------------------------------------
+
+    const finalActualPaid = completeOrder.payments.reduce(
+      (sum, payment) => sum + Number(payment.amount),
+      0
+    );
+
+    const finalLoanRemaining = completeOrder.loan
+      ? Number(completeOrder.loan.remainingAmount)
+      : 0;
+
+    const finalOutstanding = Number(
+      Math.max(
+        Number(completeOrder.total) - finalActualPaid,
+        0
+      ).toFixed(2)
+    );
+
+    // ---------------------------------------------------------
+    // 15. Socket notification
+    // ---------------------------------------------------------
+
+    const io = req.app.get('io');
+
+    if (io) {
+      io.to(`kds-room-${organizationId}`).emit(
+        fullySettled
+          ? 'order-paid'
+          : 'order-payment-updated',
+        {
+          orderId: completeOrder.id,
+          order: completeOrder,
+        }
+      );
+    }
+
+    // ---------------------------------------------------------
+    // 16. Response
+    // ---------------------------------------------------------
+
+    return res.json({
+      message: fullySettled
+        ? 'Order paid successfully'
+        : 'Partial payment recorded',
+
+      order: completeOrder,
+
+      paymentSummary: {
+        orderTotal,
+
+        alreadyPaid,
+
+        paymentThisTime: settlementAmount,
+
+        actualPaymentThisTime: actualPaymentAmount,
+
+        creditThisTime: creditAmount,
+
+        totalPaid: finalActualPaid,
+
+        remaining: finalOutstanding,
+
+        customerLoanRemaining: finalLoanRemaining,
+
+        fullySettled,
+      },
+    });
+  } catch (error) {
+    console.error('PAY ORDER ERROR:', error);
+
+    if (error.code === 'P2034') {
+      return res.status(409).json({
+        message:
+          'Another payment was processed at the same time. Please try again.',
+      });
+    }
+
+    return res.status(error.status || 500).json({
+      message:
+        error.message || 'Failed to process payment',
+    });
+  }
+});
+
+
+
 router.put('/:id', verifyToken, requireWaiter, async (req, res) => {
   try {
     const { id } = req.params;
@@ -2008,25 +2723,25 @@ res.json(order);
     // --------------------------------------------------
     // Emit KDS update
     // --------------------------------------------------
-    if (fullTickets.length > 0) {
+    // if (fullTickets.length > 0) {
 
-      const io = req.app.get('io');
+    //   const io = req.app.get('io');
 
-      if (io) {
+    //   if (io) {
 
-        io.to(
-          `kds-room-${req.user.organizationId}`
-        ).emit(
-          'ticket-updated',
-          fullTickets
-        );
-      }
-    }
+    //     io.to(
+    //       `kds-room-${req.user.organizationId}`
+    //     ).emit(
+    //       'ticket-updated',
+    //       fullTickets
+    //     );
+    //   }
+    // }
 
-    // --------------------------------------------------
-    // 13. Return updated order
-    // --------------------------------------------------
-    res.json(order);
+    // // --------------------------------------------------
+    // // 13. Return updated order
+    // // --------------------------------------------------
+    // res.json(order);
 
   } catch (e) {
 

@@ -37,8 +37,11 @@ exports.signup = async (req, res) => {
     const normalizedEmail = email.toLowerCase().trim();
     const exists = await prisma.user.findUnique({ where: { email: normalizedEmail } });
     if (exists) return res.status(400).json({ error: 'Email already registered' });
-    
+    if (!pin) return res.status(400).json({ error: 'PIN is required' });
+    if (pin.length < 4) return res.status(400).json({ error: 'PIN must be at least 4 characters' });
+
     const hashed = await bcrypt.hash(password, 12);
+    const hashedpin = await bcrypt.hash('string(pin)', 10); // Default PIN for new users, can be changed later
     
     const { user, org } = await prisma.$transaction(async (tx) => {
       // 1. Create Organization
@@ -52,6 +55,7 @@ exports.signup = async (req, res) => {
           name: name.trim(),
           email: normalizedEmail,
           password: hashed,
+          pin: hashedpin, // Assuming you want to hash the PIN as well
           role: 'ADMIN',
           organizationId: newOrg.id
         }
@@ -88,6 +92,8 @@ exports.signup = async (req, res) => {
   }
 };
 
+
+
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -115,6 +121,106 @@ exports.login = async (req, res) => {
     });
   } catch (e) { console.error(e); res.status(500).json({ error: 'Something went wrong' }); }
 };
+
+exports.pinLogin = async (req, res) => {
+  try {
+    const { userId, pin } = req.body;
+
+    if (!userId || !pin) {
+      return res.status(400).json({
+        error: 'User and PIN are required',
+      });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: {
+        id: userId,
+      },
+      include: {
+        organization: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(401).json({
+        error: 'Invalid credentials',
+      });
+    }
+
+    if (!user.isActive) {
+      return res.status(403).json({
+        error: 'Account deactivated',
+      });
+    }
+
+    if (!user.pin) {
+      return res.status(401).json({
+        error: 'PIN login is not configured for this user',
+      });
+    }
+
+    const validPin = await bcrypt.compare(
+      String(pin),
+      user.pin
+    );
+
+    if (!validPin) {
+      return res.status(401).json({
+        error: 'Incorrect PIN',
+      });
+    }
+
+    const { accessToken, refreshToken } = generateTokens(user);
+
+    setRefreshCookie(res, refreshToken);
+
+    res.json({
+      accessToken,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        organizationId: user.organizationId,
+        organizationName: user.organization?.name,
+      },
+    });
+  } catch (e) {
+    console.error(e);
+
+    res.status(500).json({
+      error: 'Something went wrong',
+    });
+  }
+};
+
+
+exports.getLoginStaff = async (req, res) => {
+  try {
+    const users = await prisma.user.findMany({
+      where: {
+        isActive: true,
+      },
+      select: {
+        id: true,
+        name: true,
+        role: true,
+      },
+      orderBy: {
+        name: 'asc',
+      },
+    });
+
+    res.json(users);
+  } catch (e) {
+    console.error(e);
+
+    res.status(500).json({
+      error: 'Unable to load staff',
+    });
+  }
+};
+
 
 exports.refresh = async (req, res) => {
   try {

@@ -59,6 +59,7 @@ app.use('/api/products',       require('./src/routes/products'));
 app.use('/api/menu',          require('./src/routes/menu'));
 app.use('/api/categories',     require('./src/routes/categories'));
 app.use('/api/payment-methods',require('./src/routes/paymentMethods'));
+app.use('/api/loans',     require('./src/routes/loans'));
 app.use('/api/floors',         require('./src/routes/floors'));
 app.use('/api/tables',         require('./src/routes/tables'));
 app.use('/api/coupons',        require('./src/routes/coupons'));
@@ -86,11 +87,95 @@ app.use((err, req, res, next) => {
   res.status(status).json({ error: process.env.NODE_ENV === 'production' ? 'Internal server error' : err.message });
 });
 
+// io.on('connection', (socket) => {
+//   console.log('Client connected:', socket.id);
+//   socket.on('join-kds', () => {
+//     socket.join(`kds-room-${socket.data.user.organizationId}`);
+//   });
+//   socket.on('disconnect', () => console.log('Client disconnected:', socket.id));
+// });
+
+
+/* ─────────────────────────────────────────────────────
+   Public "waiter display" socket namespace
+   — no login required, secret in handshake auth
+───────────────────────────────────────────────────── */
+const waiterNamespace = io.of('/waiter');
+
+waiterNamespace.use((socket, next) => {
+  const { organizationId, secret } = socket.handshake.auth || {};
+
+  if (!organizationId || !secret) {
+    return next(new Error('organizationId and secret required'));
+  }
+
+  const expected = process.env.WAITER_KIOSK_SECRET;
+
+  if (!expected) {
+    console.warn('[waiter-ns] WAITER_KIOSK_SECRET not set in env');
+    return next(new Error('Waiter display not configured'));
+  }
+
+  if (secret !== expected) {
+    return next(new Error('Invalid waiter display secret'));
+  }
+
+  socket.data.organizationId = organizationId;
+  next();
+});
+
+waiterNamespace.on('connection', (socket) => {
+  const orgId = socket.data.organizationId;
+  const room = `waiter-room-${orgId}`;
+
+  socket.join(room);
+  console.log(`[waiter-ns] joined ${room}: ${socket.id}`);
+
+  socket.on('waiter-ack', ({ orderId, ackName }) => {
+    // Relay ack to the waiter room (all kiosks) AND the KDS room (chefs)
+    waiterNamespace.to(room).emit('waiter-ack', { orderId, ackName });
+    io.to(`kds-room-${orgId}`).emit('waiter-ack', { orderId, ackName });
+  });
+
+  socket.on('disconnect', () => {
+    console.log(`[waiter-ns] left ${room}: ${socket.id}`);
+  });
+});
+
+/* ─────────────────────────────────────────────────────
+   Authenticated socket (KDS + POS)
+───────────────────────────────────────────────────── */
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
+
   socket.on('join-kds', () => {
     socket.join(`kds-room-${socket.data.user.organizationId}`);
   });
+
+  // KDS / POS emits a waiter call
+  socket.on('waiter-call', ({ orderId, orderNumber, orderType, tableNumber, items }) => {
+    const orgId = socket.data.user?.organizationId;
+    if (!orgId) return;
+
+    const payload = {
+      orderId,
+      orderNumber,
+      orderType,
+      tableNumber,
+      items: items || [],
+      calledAt: new Date().toISOString(),
+      calledBy: socket.data.user.id,
+    };
+
+    // Broadcast to waiter displays
+    waiterNamespace.to(`waiter-room-${orgId}`).emit('waiter-call', payload);
+
+    // Confirm back to KDS (so it can show "notified")
+    io.to(`kds-room-${orgId}`).emit('waiter-call-sent', payload);
+
+    console.log(`[waiter-call] ${orderNumber} from org ${orgId}`);
+  });
+
   socket.on('disconnect', () => console.log('Client disconnected:', socket.id));
 });
 
