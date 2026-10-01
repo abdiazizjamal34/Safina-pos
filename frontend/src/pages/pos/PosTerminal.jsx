@@ -5,6 +5,7 @@ import api from '../../api/client';
 import toast from 'react-hot-toast';
 import OrderView from './OrderView';
 import OrdersList from './OrdersList';
+import CustomerCredit from '../customers/CustomerCredit';
 import CustomerManagement from './CustomerManagement';
 import FloorPopup from './FloorPopup';
 import SessionSummaryModal from '../../components/ui/SessionSummaryModal';
@@ -14,7 +15,7 @@ import {
   Coffee, Receipt, ClipboardList, UserCircle, LayoutGrid,
   Search, ChefHat, LogOut, Lock, LayoutDashboard,
   UtensilsCrossed, Tag, Ticket, BarChart3, Settings, ChevronRight,
-  ShoppingBag, TrendingUp, IndianRupee, Package, Clock, Activity, X
+  ShoppingBag, TrendingUp, IndianRupee, Package, Clock, Coins, Activity, X
 } from 'lucide-react';
 import { BACKEND_ROLES, KDS_ROLES, SESSION_ROLES, hasRole } from '../../constants/access';
 
@@ -52,6 +53,7 @@ const TAB_ACCENTS = {
   order:        ACCENT,
   'orders-list': EMERALD,
   customers:    PINK,
+  'customer-credit': AMBER, 
   'table-view': AMBER,
   kitchen:      EMERALD,
   bar:           PINK,
@@ -246,7 +248,9 @@ const handleCloseSession = async () => {
     { id: 'order',        label: 'POS Order',   Icon: Receipt },
     { id: 'orders-list',  label: 'Orders',      Icon: ClipboardList },
     { id: 'customers',    label: 'Customers',   Icon: UserCircle },
+    { id: 'customer-credit', label: 'Customer Credit', Icon: Coins, color: AMBER },
     { id: 'table-view',   label: 'Table View',  Icon: LayoutGrid },
+    
     ...(hasRole(user, KDS_ROLES) ? [
       { id: 'kitchen', label: 'Kitchen KDS', Icon: ChefHat },
       { id: 'bar', label: 'Bar KDS', Icon: Coffee },
@@ -437,6 +441,18 @@ const handleCloseSession = async () => {
                         <NavIcon size={14} strokeWidth={2.5} color={color} />{label}
                       </button>
                     ))}
+
+                    
+{/* 👇 NEW: Customer Credit inside POS */}
+<button
+  onClick={() => { setView('customer-credit'); setShowHamburger(false); }}
+  className="w-full text-left px-4 py-2.5 text-sm font-semibold flex items-center gap-3 transition-all duration-150"
+  style={{ color: FG }}
+  onMouseEnter={e => { e.currentTarget.style.background = '#F8FAFC'; }}
+  onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+>
+  <Coins size={14} strokeWidth={2.5} color={AMBER} /> Customer Credit
+</button>
                     {hasRole(user, KDS_ROLES) && <div className="border-t mt-1" style={{ borderColor: BORDER }}>
                       <button onClick={() => { navigate('/kitchen'); setShowHamburger(false); }}
                         className="w-full text-left px-4 py-2.5 text-sm font-semibold flex items-center gap-3 transition"
@@ -445,6 +461,7 @@ const handleCloseSession = async () => {
                         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                         <ChefHat size={14} strokeWidth={2.5} color={EMERALD} /> Kitchen Display
                       </button>
+
                       <button onClick={() => { navigate('/bar'); setShowHamburger(false); }}
                         className="w-full text-left px-4 py-2.5 text-sm font-semibold flex items-center gap-3 transition"
                         style={{ color: FG }}
@@ -474,7 +491,18 @@ const handleCloseSession = async () => {
               )}
             </div>
           )}
-
+                {/* 👇 NEW: Quick logout button — visible to all roles */}
+<button
+  onClick={handleLogout}
+  title="Logout"
+  className="w-9 h-9 rounded-xl flex items-center justify-center border-2 border-[#1E293B] transition hover:-translate-y-0.5 active:translate-y-0.5"
+  style={{
+    background: '#FEE2E2',
+    boxShadow: '2px 2px 0px 0px #1E293B',
+  }}
+>
+  <LogOut size={16} strokeWidth={2.5} color="#EF4444" />
+</button>
           {/* Avatar dropdown */}
           <div className="relative">
             <button
@@ -509,6 +537,19 @@ const handleCloseSession = async () => {
                       <Settings size={14} strokeWidth={2.5} color={ACCENT} /> Backend Admin
                     </button>
                   )}
+                  {/* Customer Credit — available to Admin, Manager, Cashier, Waiter */}
+{['ADMIN', 'MANAGER', 'CASHIER', 'WAITER'].includes(user?.role) && (
+  <button
+    onClick={() => { navigate('/customers/credit'); setMenuOpen(false); }}
+    className="w-full text-left px-4 py-2.5 text-sm font-semibold flex items-center gap-2 transition"
+    style={{ color: FG }}
+    onMouseEnter={e => e.currentTarget.style.background = '#F8FAFC'}
+    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+  >
+    <Coins size={14} strokeWidth={2.5} color={AMBER} /> Customer Credit
+  </button>
+)}
+
                   {hasRole(user, KDS_ROLES) && <button onClick={() => { navigate('/kitchen'); setMenuOpen(false); }}
                     className="w-full text-left px-4 py-2.5 text-sm font-semibold flex items-center gap-2 transition"
                     style={{ color: FG }}
@@ -562,6 +603,7 @@ const handleCloseSession = async () => {
         )}
         {currentView === 'orders-list' && <OrdersList session={session} />}
         {currentView === 'customers' && <CustomerManagement />}
+        {currentView === 'customer-credit' && <CustomerCredit />}
         {currentView === 'table-view' && (
           <div className="h-full p-6 overflow-hidden bg-[#FFFDF5]">
             <FloorPopup
@@ -734,6 +776,7 @@ const handleCloseSession = async () => {
                   {[
                     { label: 'Active Orders', sub: 'View & complete orders', Icon: ClipboardList, color: '#DB2777', bg: '#FDF2F8', onClick: () => setView('orders-list') },
                     { label: 'Customers', sub: 'Profiles & loyalty', Icon: UserCircle, color: '#2563EB', bg: '#EFF6FF', onClick: () => setView('customers') },
+                    { label: 'Customer Credit', sub: 'Manage customer credits', Icon: Coins, color: '#EA580C', bg: '#FFF7ED', onClick: () => setView('customer-credit') },
                     { label: 'Kitchen KDS', sub: 'Cook tickets & queue', Icon: ChefHat, color: '#EA580C', bg: '#FFF7ED', onClick: () => navigate('/kitchen') },
                   ].map(({ label, sub, Icon, color, bg, onClick }) => (
                     <button

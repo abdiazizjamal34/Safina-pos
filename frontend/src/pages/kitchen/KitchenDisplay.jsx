@@ -37,6 +37,7 @@ import {
   RotateCcw,
   ChefHat,
   BedDouble,
+  Bell,
   Truck
 } from 'lucide-react';
 
@@ -77,6 +78,7 @@ const STAGE_META = {
     icon: CheckCircle2
   }
 };
+
 
 const useOrderTimer = (createdAt) => {
   const [elapsed, setElapsed] = useState(0);
@@ -137,6 +139,7 @@ function TicketCard({
   station,
   onStageUpdate,
   onItemToggle,
+   onNotifyWaiter,
   isNew,
   isUpdated
 }) {
@@ -566,7 +569,7 @@ function TicketCard({
           </>
         )}
 
-        {ticket.stage === KDS_STAGE.COMPLETED && (
+        {/* {ticket.stage === KDS_STAGE.COMPLETED && (
           <button
             onClick={() =>
               onStageUpdate(
@@ -583,7 +586,38 @@ function TicketCard({
 
             Recall to Preparing
           </button>
-        )}
+        )} */}
+
+        {ticket.stage === KDS_STAGE.COMPLETED && (
+  <div className="w-full grid grid-cols-2 gap-2">
+    <button
+      onClick={() =>
+        onStageUpdate(
+          ticket.id,
+          KDS_STAGE.PREPARING
+        )
+      }
+      className="flex items-center justify-center gap-1.5 bg-white hover:bg-slate-100 text-slate-700 border-2 border-slate-800 py-1.5 px-2 rounded-xl font-black text-xs shadow-pop-sm transition active:scale-95 font-outfit"
+    >
+      <RotateCcw
+        size={14}
+        strokeWidth={2.5}
+      />
+      Recall
+    </button>
+
+    <button
+      onClick={() => onNotifyWaiter(ticket)}
+      className="flex items-center justify-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white border-2 border-slate-800 py-1.5 px-2 rounded-xl font-black text-xs shadow-pop-sm transition active:scale-95 font-outfit"
+    >
+      <Bell
+        size={14}
+        strokeWidth={2.5}
+      />
+      Notify Waiter
+    </button>
+  </div>
+)}
 
       </div>
 
@@ -1300,6 +1334,10 @@ export default function KitchenDisplay({
     // );
 
 
+    socket.on('waiter-ack', ({ orderId, ackName }) => {
+  toast.success(`${ackName || 'Waiter'} is on it!`, { icon: '✅' });
+});
+
     socket.on(
   SOCKET_EVENTS.TICKET_UPDATED,
   (payload) => {
@@ -1895,6 +1933,43 @@ export default function KitchenDisplay({
       }
 
     };
+
+    /* ─────────────────────────────────────────────
+   NOTIFY WAITER
+   Sends a call to the waiter display kiosks.
+───────────────────────────────────────────── */
+
+const handleNotifyWaiter = (ticket) => {
+  const socket = socketRef.current;
+
+  if (!socket) {
+    toast.error('Not connected — cannot notify waiter');
+    return;
+  }
+
+  const order = ticket.order || {};
+
+  // Only send items that belong to this station
+  const lines = (order.lines || []).filter(
+    (line) => line.kdsStation === station
+  );
+
+  socket.emit('waiter-call', {
+    orderId: ticket.orderId,
+    orderNumber: order.orderNumber,
+    orderType: order.orderType,
+    tableNumber: order.table?.tableNumber || null,
+    items: lines.map((line) => ({
+      name: line.product?.name || '—',
+      qty: line.quantity,
+    })),
+  });
+
+  toast.success(
+    `Waiter notified for #${order.orderNumber || '—'}`,
+    { icon: '🔔' }
+  );
+};
 
   /* ─────────────────────────────────────────────
      TICKET GROUPS
@@ -2515,6 +2590,8 @@ export default function KitchenDisplay({
                             onItemToggle={
                               handleItemToggle
                             }
+
+                            onNotifyWaiter={handleNotifyWaiter} 
                           />
 
                         </div>

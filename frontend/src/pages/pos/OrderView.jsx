@@ -1,4 +1,5 @@
 
+
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import api from '../../api/client';
@@ -75,9 +76,19 @@ function ReceiptModal({ order, onClose, onNewOrder }) {
       })
       .join('');
     const discount = parseFloat(o.discountAmount || 0);
+    // const paymentRows = (o.payments || [])
+    //   .map(p => `<tr><td style="font-size:11px;color:#555">Paid via ${p.paymentMethod} ${p.paymentReference ? `(${p.paymentReference})` : ''}</td><td class="amt" style="font-size:11px;color:#555">ETB ${Number(p.amount).toFixed(2)}</td></tr>`)
+    //   .join('');
     const paymentRows = (o.payments || [])
-      .map(p => `<tr><td style="font-size:11px;color:#555">Paid via ${p.paymentMethod} ${p.paymentReference ? `(${p.paymentReference})` : ''}</td><td class="amt" style="font-size:11px;color:#555">ETB ${Number(p.amount).toFixed(2)}</td></tr>`)
-      .join('');
+  .map((p) => {
+    const methodName =
+      typeof p.paymentMethod === 'string'
+        ? p.paymentMethod
+        : p.paymentMethod?.name || 'Payment';
+
+    return `<tr><td style="font-size:11px;color:#555">Paid via ${methodName} ${p.paymentReference ? `(${p.paymentReference})` : ''}</td><td class="amt" style="font-size:11px;color:#555">ETB ${Number(p.amount).toFixed(2)}</td></tr>`;
+  })
+  .join('');
     const customerNames = o.customers?.map(c => c.name).join(', ') || o.customer?.name || '';
 
     // Calculate tax breakdown
@@ -213,11 +224,6 @@ function ReceiptModal({ order, onClose, onNewOrder }) {
             <div key={l.id} className="flex justify-between items-start">
               <div className="flex flex-col">
                 <span className="text-slate-600 font-semibold">{l.product?.name} × {l.quantity}</span>
-                {/* {rate > 0 && (
-                  <span className="text-[10px] text-emerald-600 font-medium leading-none mt-0.5">
-                    {rate}% Tax (ETB {lineTax.toFixed(2)})
-                  </span>
-                )} */}
               </div>
               <span className="text-slate-800 font-bold">{fmt(l.lineTotal)}</span>
             </div>
@@ -257,12 +263,29 @@ function ReceiptModal({ order, onClose, onNewOrder }) {
         {order.payments && order.payments.length > 0 && (
           <div className="mt-3 space-y-1 pt-2 border-t border-slate-100 text-xs text-slate-550 font-jakarta">
             <div className="font-bold text-slate-700">Payment Breakdown:</div>
-            {order.payments.map((p, idx) => (
+            {/* {order.payments.map((p, idx) => (
               <div key={idx} className="flex justify-between">
                 <span>{p.paymentMethod} {p.paymentReference ? `(${p.paymentReference})` : ''}</span>
                 <span className="font-bold text-slate-800">{fmt(p.amount)}</span>
               </div>
-            ))}
+            ))} */}
+              {order.payments.map((p, idx) => {
+  const methodName =
+    typeof p.paymentMethod === 'string'
+      ? p.paymentMethod
+      : p.paymentMethod?.name || 'Payment';
+
+  return (
+    <div key={idx} className="flex justify-between">
+      <span>
+        {methodName}
+        {p.paymentReference ? ` (${p.paymentReference})` : ''}
+      </span>
+      <span className="font-bold text-slate-800">{fmt(p.amount)}</span>
+    </div>
+  );
+})}
+
           </div>
         )}
         <div className="text-center text-slate-400 text-xs mt-4">Thank you! Visit again 🙏</div>
@@ -498,6 +521,10 @@ export default function OrderView({ table, session, existingOrder, initialOrder,
   const saveTimerRef = useRef(null);
   const loadedOrderIdRef = useRef(null);
 
+  /* ── NEW: Credit/Loan state ── */
+  const [putRemainingOnCredit, setPutRemainingOnCredit] = useState(false);
+  const [payAmount, setPayAmount] = useState('');
+
   /* ── Split Payment state ── */
   const [isSplit, setIsSplit] = useState(false);
   const [splitMode, setSplitMode] = useState('equal'); // 'equal' | 'item'
@@ -549,6 +576,9 @@ useEffect(() => {
       setPaidSplits([]);
       setActiveSplitIdx(null);
       setItemAssignments({});
+      // NEW: Reset credit state when payment panel closes
+      setPutRemainingOnCredit(false);
+      setPayAmount('');
     }
   }, [showPayment]);
 
@@ -772,15 +802,6 @@ useEffect(() => {
     checkPromotions(cartItems);
   }, [cartItems, promotions]);
 
-  // /* ── Frequently ordered together suggestions ── */
-  // useEffect(() => {
-  //   if (cartItems.length === 0) { setSuggestions([]); return; }
-  //   const lastItem = cartItems[cartItems.length - 1];
-  //   api.get(`/products/frequently-together/${lastItem.productId}`)
-  //     .then(res => setSuggestions(res))
-  //     .catch(() => setSuggestions([]));
-  // }, [cartItems.length]);
-
   /* ────── computed values ────── */
   const subtotal = cartItems.reduce((s, i) => s + (i.price || i.unitPrice || 0) * i.quantity, 0);
   const promoDiscount = activePromos.reduce((s, p) => s + p.discount, 0);
@@ -832,6 +853,12 @@ useEffect(() => {
   const taxBreakdown = getTaxBreakdown(cartItems, subtotal, afterDiscount);
 
   const cashChange = cashReceived ? Math.max(0, parseFloat(cashReceived) - total) : null;
+
+  /* ────── NEW: Credit computed values ────── */
+  const parsedPayAmount = parseFloat(payAmount) || 0;
+  const creditAmount = Math.max(0, total - parsedPayAmount);
+  const isFullCredit = putRemainingOnCredit && parsedPayAmount <= 0;
+  const isPartialCredit = putRemainingOnCredit && parsedPayAmount > 0 && parsedPayAmount < total;
 
   /* ────── filtered products ────── */
   const visibleProducts = products.filter(p => {
@@ -899,45 +926,7 @@ useEffect(() => {
 
 
 
- 
-
   /* ────── send to kitchen ────── */
-  // const handleSendKitchen = async () => {
-  //   if (!cartItems.length) return toast.error('Cart is empty');
-  //   if (!validateOrderDetails()) return;
-  //   setKitchenLoading(true);
-  //   try {
-  //     let order = currentOrder;
-  //     const lines = cartItems.map(i => ({ productId: i.productId, quantity: i.quantity }));
-  //     const payload = getOrderPayload(lines);
-  //     if (order) {
-  //       if (EDITABLE_ORDER_STATUSES.includes(order.status)) {
-  //         order = await api.put(`/orders/${order.id}`, payload);
-  //         setCurrentOrder(order);
-  //         onOrderUpdate?.(order);
-  //       }
-  //     } else {
-  //       order = await api.post('/orders', {
-  //         ...payload,
-  //         sessionId: session.id,
-  //       });
-  //       setCurrentOrder(order);
-  //       onOrderUpdate?.(order);
-  //     }
-  //     if (order.status === ORDER_STATUS.DRAFT) {
-  //       const updatedOrder = await api.put(`/orders/${order.id}/send-kitchen`);
-  //       setCurrentOrder(updatedOrder);
-  //       onOrderUpdate?.(updatedOrder);
-  //       toast.success('Order sent to kitchen!', {
-  //         icon: <ChefHat size={18} className="text-blue-400" />
-  //       });
-  //     } else {
-  //       toast.success('Order updated');
-  //     }
-  //   } catch (err) { toast.error(err?.error || err?.message || 'Failed to send to kitchen'); }
-  //   finally { setKitchenLoading(false); }
-  // };
-
   const handleSendKitchen = async () => {
   if (!cartItems.length) {
     return toast.error('Cart is empty');
@@ -1073,15 +1062,40 @@ const handlePay = async () => {
   }
 
   // --------------------------------------------------
-  // 2. Normal payment validation
+  // 2. NEW: Credit / Loan validation
   // --------------------------------------------------
-  if (!isSplit && !payMethod) {
+  if (!isSplit && putRemainingOnCredit) {
+    if (customers.length !== 1) {
+      toast.error('Select exactly one customer before putting any amount on credit');
+      return;
+    }
+
+    if (payAmount !== '' && (isNaN(parsedPayAmount) || parsedPayAmount < 0)) {
+      toast.error('Enter a valid amount to pay now');
+      return;
+    }
+
+    if (parsedPayAmount > total) {
+      toast.error('Amount to pay now cannot exceed the order total');
+      return;
+    }
+
+    if (parsedPayAmount > 0 && !payMethod) {
+      toast.error('Select a payment method for the partial payment');
+      return;
+    }
+  }
+
+  // --------------------------------------------------
+  // 3. Normal payment validation (non-credit)
+  // --------------------------------------------------
+  if (!isSplit && !putRemainingOnCredit && !payMethod) {
     toast.error('Select a payment method');
     return;
   }
 
   // --------------------------------------------------
-  // 3. Split payment validation
+  // 4. Split payment validation
   // --------------------------------------------------
   if (isSplit) {
     if (!isSplitFullyPaid()) {
@@ -1101,7 +1115,6 @@ const handlePay = async () => {
       return;
     }
 
-    // Make sure every split has a valid amount and method
     const invalidSplit = validSplits.find(
       (split) =>
         !Number.isFinite(Number(split.amount)) ||
@@ -1119,8 +1132,12 @@ const handlePay = async () => {
 
   try {
     // --------------------------------------------------
-    // 4. Build payment payload
+    // 5. Build payment payload
     // --------------------------------------------------
+    const customerIds = Array.isArray(customers)
+      ? customers.map((c) => c.id)
+      : [];
+
     let paymentPayload;
 
     if (isSplit) {
@@ -1136,53 +1153,116 @@ const handlePay = async () => {
         paymentMethod: 'SPLIT',
         paymentReference: 'Split Billing',
         payments: validSplits,
+        customerIds,
       };
+    } else if (putRemainingOnCredit) {
+      const paidNow = parsedPayAmount;
+
+      if (paidNow <= 0) {
+        paymentPayload = {
+          paymentMethod: 'CREDIT',
+          amount: 0,
+          onCredit: true,
+          paymentReference: null,
+          payments: null,
+          customerIds,
+        };
+      } else {
+        const methodName = String(payMethod).trim();
+        const methodKey = methodName.toUpperCase();
+
+        let paymentReference = null;
+
+        if (methodKey === 'CASH') {
+          const received = cashReceived ? parseFloat(cashReceived) : 0;
+          const change = Math.max(0, received - paidNow);
+          paymentReference = `Cash Change: ${change.toFixed(2)}`;
+        } else if (methodKey === 'UPI') {
+          paymentReference = 'UPI Scan';
+        } else {
+          paymentReference = cardRef?.trim() || null;
+        }
+
+        paymentPayload = {
+          paymentMethod: methodName,
+          amount: paidNow,
+          onCredit: true,
+          paymentReference,
+          payments: null,
+          customerIds,
+        };
+      }
     } else {
+      const methodName = String(payMethod).trim();
+      const methodKey = methodName.toUpperCase();
+
+      let paymentReference = null;
+
+      if (methodKey === 'CASH') {
+        const received = cashReceived ? parseFloat(cashReceived) : 0;
+        const change = Math.max(0, received - total);
+        paymentReference = `Cash Change: ${change.toFixed(2)}`;
+      } else if (methodKey === 'UPI') {
+        paymentReference = 'UPI Scan';
+      } else {
+        paymentReference = cardRef?.trim() || null;
+      }
+
       paymentPayload = {
-        paymentMethod: String(payMethod).trim(),
-        paymentReference:
-          payMethod === 'CARD'
-            ? (cardRef?.trim() || null)
-            : null,
+        paymentMethod: methodName,
+        amount: total,
+        onCredit: false,
+        paymentReference,
         payments: null,
+        customerIds,
       };
     }
 
     // --------------------------------------------------
-    // 5. Debug information
+    // 6. Debug information
     // --------------------------------------------------
     console.log('========== FRONTEND PAYMENT ==========');
     console.log('ORDER ID:', currentOrder.id);
     console.log('ORDER STATUS:', currentOrder.status);
     console.log('PAY METHOD:', payMethod);
     console.log('IS SPLIT:', isSplit);
+    console.log('PUT REMAINING ON CREDIT:', putRemainingOnCredit);
+    console.log('PAY AMOUNT NOW:', parsedPayAmount);
+    console.log('CREDIT AMOUNT:', creditAmount);
+    console.log('CUSTOMER IDS:', customerIds);
     console.log('PAID SPLITS:', paidSplits);
     console.log('PAYMENT PAYLOAD:', paymentPayload);
     console.log('======================================');
 
     // --------------------------------------------------
-    // 6. Send payment directly
+    // 7. Send payment directly
     // --------------------------------------------------
-    const paid = await api.put(
+    const response = await api.put(
       `/orders/${currentOrder.id}/pay`,
       paymentPayload
     );
 
     // --------------------------------------------------
-    // 7. Update local order
+    // 8. Extract the order from the response.
+    // Backend returns { message, order, paymentSummary }.
+    // --------------------------------------------------
+    const paid = response?.order || response;
+
+    // --------------------------------------------------
+    // 9. Update local order
     // --------------------------------------------------
     setCurrentOrder(paid);
     onOrderUpdate?.(paid);
 
     // --------------------------------------------------
-    // 8. Show receipt
+    // 10. Show receipt
     // --------------------------------------------------
     setPaidOrder(paid);
     setShowReceipt(true);
     setShowPayment(false);
 
     // --------------------------------------------------
-    // 9. Reset payment state
+    // 11. Reset payment state
     // --------------------------------------------------
     setPayMethod(null);
     setCashReceived('');
@@ -1191,27 +1271,39 @@ const handlePay = async () => {
     setPaidSplits([]);
     setActiveSplitIdx(null);
     setItemAssignments({});
+    setPutRemainingOnCredit(false);
+    setPayAmount('');
 
     // --------------------------------------------------
-    // 10. Success message
+    // 12. Success message
     // --------------------------------------------------
-    toast.success(
-      `Payment of ${fmt(paid.total)} received!`,
-      {
-        duration: 3000,
-        style: {
-          background: '#064e3b',
-          color: '#a7f3d0',
-          border: '1px solid #059669',
-        },
-        icon: (
-          <Coins
-            size={18}
-            className="text-yellow-400"
-          />
-        ),
-      }
-    );
+    if (putRemainingOnCredit) {
+      toast.success(
+        `Payment recorded. Credit: ${fmt(creditAmount)}`,
+        {
+          duration: 4000,
+          style: {
+            background: '#78350f',
+            color: '#fef3c7',
+            border: '1px solid #d97706',
+          },
+          icon: <Coins size={18} className="text-yellow-400" />,
+        }
+      );
+    } else {
+      toast.success(
+        `Payment of ${fmt(paid.total)} received!`,
+        {
+          duration: 3000,
+          style: {
+            background: '#064e3b',
+            color: '#a7f3d0',
+            border: '1px solid #059669',
+          },
+          icon: <Coins size={18} className="text-yellow-400" />,
+        }
+      );
+    }
 
   } catch (err) {
     console.error('PAYMENT FAILED:', err);
@@ -1221,6 +1313,7 @@ const handlePay = async () => {
     toast.error(
       err?.error ||
       err?.response?.data?.error ||
+      err?.response?.data?.message ||
       err?.message ||
       'Payment failed'
     );
@@ -1228,6 +1321,7 @@ const handlePay = async () => {
     setPayLoading(false);
   }
 };
+
 
   const handleNewOrder = () => {
     setCartItems([]); setCoupon(null); setCustomers([]);
@@ -1512,7 +1606,7 @@ const handlePay = async () => {
       </div>
 
       {/* ══ RIGHT — Cart + Payment ════════════════════════ */}
-      <div className={`pos-cart-col flex-col flex-1 ${mobileTab === 'cart' ? 'flex' : 'hidden'} lg:flex h-full`} style={{ background: WHITE, borderLeft: `2px solid ${BORDER}` }}>
+      <div className={`pos-cart-col flex-col flex-1 ${mobileTab === 'cart' ? 'flex' : 'hidden'} lg:flex h-full min-h-0`} style={{ background: WHITE, borderLeft: `2px solid ${BORDER}` }}>
 
         {/* ── Cart Header ── */}
         <div className="px-4 py-3 shrink-0" style={{ borderBottom: `2px solid ${BORDER}`, background: WHITE }}>
@@ -1581,1553 +1675,953 @@ const handlePay = async () => {
           </div>
         </div>
 
-        {/* ── Order Details ── */}
+        {/* ── SCROLLABLE MIDDLE — Order Details + Cart + Promos + Totals ── */}
         {!showPayment && (
-          <div className="px-3 pt-2 shrink-0">
-            <div className="rounded-xl p-3 border-2" style={{ background: '#FFFDF5', borderColor: BORDER, boxShadow: '3px 3px 0px 0px #E2E8F0' }}>
-              <div className="flex items-center gap-2 mb-2.5">
-                <ClipboardList size={14} style={{ color: ACCENT }} />
-                <span className="text-xs font-black uppercase tracking-wider" style={{ color: FG, fontFamily: FONT_H }}>Order Details</span>
-              </div>
+          <div className="flex-1 overflow-y-auto min-h-0" style={{ background: '#FAFAFA' }}>
 
-              <div className="grid grid-cols-4 gap-1.5">
-                {[
-                  { value: 'TABLE', label: 'Table', icon: Armchair },
-                  { value: 'ROOM', label: 'Room', icon: Home },
-                  { value: 'DELIVERY', label: 'Delivery', icon: Truck },
-                  { value: 'PICKUP', label: 'Pickup', icon: Package },
-                ].map(({ value, label, icon: Icon }) => {
-                  const selected = orderType === value;
-                  return (
-                    <button
-                      key={value}
-                      type="button"
-                      onClick={() => {
-                        setOrderType(value);
-                        if (value !== 'ROOM') setRoomNumber('');
-                        if (value !== 'DELIVERY') setDeliveryLocation(value === 'ROOM' ? '' : '');
-                      }}
-                      className="py-2 rounded-lg border-2 flex flex-col items-center justify-center gap-0.5 text-[10px] font-black transition"
-                      style={{
-                        background: selected ? ACCENT : WHITE,
-                        color: selected ? '#fff' : MUTED,
-                        borderColor: selected ? FG : BORDER,
-                        boxShadow: selected ? '2px 2px 0px 0px #1E293B' : 'none',
-                        fontFamily: FONT_H,
-                      }}
-                    >
-                      <Icon size={14} />
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
+            {/* ── Order Details ── */}
+            <div className="px-3 pt-2">
+              <div className="rounded-xl p-3 border-2" style={{ background: '#FFFDF5', borderColor: BORDER, boxShadow: '3px 3px 0px 0px #E2E8F0' }}>
+                <div className="flex items-center gap-2 mb-2.5">
+                  <ClipboardList size={14} style={{ color: ACCENT }} />
+                  <span className="text-xs font-black uppercase tracking-wider" style={{ color: FG, fontFamily: FONT_H }}>Order Details</span>
+                </div>
 
-              {orderType === 'TABLE' && (
-                <div className="mt-2 flex items-center justify-between gap-2 rounded-lg px-3 py-2 border-2" style={{ background: WHITE, borderColor: table ? '#C4B5FD' : '#FCD34D' }}>
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Armchair size={14} className="shrink-0" style={{ color: table ? ACCENT : '#D97706' }} />
-                    <span className="text-xs font-bold truncate" style={{ color: FG }}>
-                      {table ? `Table ${table.tableNumber}` : 'No table selected'}
-                    </span>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {[
+                    { value: 'TABLE', label: 'Table', icon: Armchair },
+                    { value: 'ROOM', label: 'Room', icon: Home },
+                    { value: 'DELIVERY', label: 'Delivery', icon: Truck },
+                    { value: 'PICKUP', label: 'Pickup', icon: Package },
+                  ].map(({ value, label, icon: Icon }) => {
+                    const selected = orderType === value;
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => {
+                          setOrderType(value);
+                          if (value !== 'ROOM') setRoomNumber('');
+                          if (value !== 'DELIVERY') setDeliveryLocation(value === 'ROOM' ? '' : '');
+                        }}
+                        className="py-2 rounded-lg border-2 flex flex-col items-center justify-center gap-0.5 text-[10px] font-black transition"
+                        style={{
+                          background: selected ? ACCENT : WHITE,
+                          color: selected ? '#fff' : MUTED,
+                          borderColor: selected ? FG : BORDER,
+                          boxShadow: selected ? '2px 2px 0px 0px #1E293B' : 'none',
+                          fontFamily: FONT_H,
+                        }}
+                      >
+                        <Icon size={14} />
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {orderType === 'TABLE' && (
+                  <div className="mt-2 flex items-center justify-between gap-2 rounded-lg px-3 py-2 border-2" style={{ background: WHITE, borderColor: table ? '#C4B5FD' : '#FCD34D' }}>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Armchair size={14} className="shrink-0" style={{ color: table ? ACCENT : '#D97706' }} />
+                      <span className="text-xs font-bold truncate" style={{ color: FG }}>
+                        {table ? `Table ${table.tableNumber}` : 'No table selected'}
+                      </span>
+                    </div>
+                    {!table && onTableClick && (
+                      <button type="button" onClick={() => onTableClick()} className="text-[10px] font-black text-violet-600 hover:underline shrink-0">
+                        Select Table
+                      </button>
+                    )}
                   </div>
-                  {!table && onTableClick && (
-                    <button type="button" onClick={() => onTableClick()} className="text-[10px] font-black text-violet-600 hover:underline shrink-0">
-                      Select Table
-                    </button>
-                  )}
-                </div>
-              )}
+                )}
 
-              {orderType === 'ROOM' && (
-                <div className="mt-2">
-                  <label className="block text-[10px] font-black uppercase tracking-wide mb-1" style={{ color: MUTED, fontFamily: FONT_H }}>Room Number *</label>
-                  <input
-                    value={roomNumber}
-                    onChange={e => setRoomNumber(e.target.value)}
-                    placeholder="e.g. 204"
-                    className="w-full rounded-lg px-3 py-2 text-sm font-semibold focus:outline-none border-2 transition"
-                    style={{ background: WHITE, borderColor: BORDER, color: FG }}
-                  />
-                </div>
-              )}
+                {orderType === 'ROOM' && (
+                  <div className="mt-2">
+                    <label className="block text-[10px] font-black uppercase tracking-wide mb-1" style={{ color: MUTED, fontFamily: FONT_H }}>Room Number *</label>
+                    <input
+                      value={roomNumber}
+                      onChange={e => setRoomNumber(e.target.value)}
+                      placeholder="e.g. 204"
+                      className="w-full rounded-lg px-3 py-2 text-sm font-semibold focus:outline-none border-2 transition"
+                      style={{ background: WHITE, borderColor: BORDER, color: FG }}
+                    />
+                  </div>
+                )}
 
-              {orderType === 'DELIVERY' && (
+                {orderType === 'DELIVERY' && (
+                  <div className="mt-2">
+                    <label className="block text-[10px] font-black uppercase tracking-wide mb-1" style={{ color: MUTED, fontFamily: FONT_H }}>Delivery Location *</label>
+                    <textarea
+                      value={deliveryLocation}
+                      onChange={e => setDeliveryLocation(e.target.value)}
+                      placeholder="Enter delivery address / location"
+                      rows={2}
+                      className="w-full rounded-lg px-3 py-2 text-sm font-semibold focus:outline-none border-2 transition resize-none"
+                      style={{ background: WHITE, borderColor: BORDER, color: FG }}
+                    />
+                  </div>
+                )}
+
                 <div className="mt-2">
-                  <label className="block text-[10px] font-black uppercase tracking-wide mb-1" style={{ color: MUTED, fontFamily: FONT_H }}>Delivery Location *</label>
+                  <label className="block text-[10px] font-black uppercase tracking-wide mb-1" style={{ color: MUTED, fontFamily: FONT_H }}>Additional Info / Customer Notes</label>
                   <textarea
-                    value={deliveryLocation}
-                    onChange={e => setDeliveryLocation(e.target.value)}
-                    placeholder="Enter delivery address / location"
+                    value={customerNotes}
+                    onChange={e => setCustomerNotes(e.target.value)}
+                    placeholder="Special instructions, preferences, delivery notes…"
                     rows={2}
-                    className="w-full rounded-lg px-3 py-2 text-sm font-semibold focus:outline-none border-2 transition resize-none"
+                    className="w-full rounded-lg px-3 py-2 text-sm font-medium focus:outline-none border-2 transition resize-none"
                     style={{ background: WHITE, borderColor: BORDER, color: FG }}
                   />
                 </div>
-              )}
-
-              <div className="mt-2">
-                <label className="block text-[10px] font-black uppercase tracking-wide mb-1" style={{ color: MUTED, fontFamily: FONT_H }}>Additional Info / Customer Notes</label>
-                <textarea
-                  value={customerNotes}
-                  onChange={e => setCustomerNotes(e.target.value)}
-                  placeholder="Special instructions, preferences, delivery notes…"
-                  rows={2}
-                  className="w-full rounded-lg px-3 py-2 text-sm font-medium focus:outline-none border-2 transition resize-none"
-                  style={{ background: WHITE, borderColor: BORDER, color: FG }}
-                />
               </div>
             </div>
-          </div>
-        )}
 
-        {/* ── Cart Items ── */}
-        {!showPayment && (
-          <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1.5" style={{ background: '#FAFAFA' }}>
-            {customers.length === 0 && !hideCustomerSuggest && (
-              <div 
-                className="border-2 border-dashed rounded-xl p-3 mb-2 flex items-center justify-between gap-2 text-xs font-semibold transition-all duration-200"
-                style={{ 
-                  background: '#F5F3FF', 
-                  borderColor: '#C4B5FD', 
-                  color: '#6D28D9',
-                  boxShadow: '2px 2px 0px 0px #E2E8F0' 
-                }}
-              >
-                <div className="flex items-center gap-2">
-                  <User size={14} className="text-violet-500 shrink-0" />
-                  <span><strong>Suggested:</strong> Assign a customer to track history & loyalty.</span>
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <button 
-                    onClick={() => setShowCustomer(true)}
-                    className="px-2.5 py-1 text-white rounded-lg font-bold transition text-[11px] border border-slate-800"
-                    style={{ background: ACCENT, boxShadow: '1.5px 1.5px 0px 0px #1E293B' }}
-                  >
-                    Assign
-                  </button>
-                  <button 
-                    onClick={() => setHideCustomerSuggest(true)}
-                    className="w-5 h-5 rounded flex items-center justify-center text-violet-400 hover:text-violet-750 hover:bg-violet-100 transition shrink-0"
-                    title="Dismiss suggestion"
-                  >
-                    <X size={12} strokeWidth={2.5} />
-                  </button>
-                </div>
-              </div>
-            )}
-            {cartItems.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full min-h-[180px] text-center gap-3">
-                <div className="w-16 h-16 rounded-2xl flex items-center justify-center border-2" style={{ background: WHITE, borderColor: BORDER, boxShadow: `4px 4px 0px 0px ${BORDER}` }}>
-                  <ShoppingCart size={28} style={{ color: BORDER }} />
-                </div>
-                <div>
-                  <div className="font-bold text-sm" style={{ color: MUTED, fontFamily: FONT_H }}>Cart is empty</div>
-                  <div className="text-xs mt-0.5" style={{ color: '#CBD5E1' }}>Tap a product to add it</div>
-                </div>
-              </div>
-            ) : (
-              cartItems.map((item, idx) => {
-                const itemColor = item.color || ACCENT;
-                return (
-                  <div key={idx}
-                    className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl"
-                    style={{ background: WHITE, border: `2px solid ${BORDER}`, boxShadow: `3px 3px 0px 0px ${BORDER}` }}>
-                    {/* Color bar */}
-                    <div className="w-1.5 h-8 rounded-full shrink-0" style={{ background: itemColor }} />
-                    <div className="flex-1 min-w-0">
-                      <div className="font-bold text-sm truncate" style={{ color: FG, fontFamily: FONT_H }}>{item.name}</div>
-                      <div className="text-xs mt-0.5 flex gap-1.5 flex-wrap" style={{ color: MUTED }}>
-                        <span>ETB {item.price.toFixed(2)} each</span>
-                        {parseFloat(item.tax || 0) > 0 && (
-                          <span className="text-emerald-600 font-medium">
-                            · {item.tax}% Tax (ETB {((item.price * item.quantity) * (parseFloat(item.tax || 0) / 100)).toFixed(2)})
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button onClick={() => updateQty(idx, -1)}
-                        className="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-sm transition border-2"
-                        style={{ background: WHITE, color: FG, borderColor: BORDER }}>−</button>
-                      <span className="w-7 text-center font-black text-sm" style={{ color: FG }}>{item.quantity}</span>
-                      <button onClick={() => updateQty(idx, +1)}
-                        className="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-sm transition border-2"
-                        style={{ background: itemColor, color: '#fff', borderColor: FG }}>+</button>
-                    </div>
-                    <div className="font-black text-sm w-16 text-right shrink-0" style={{ color: ACCENT }}>
-                      {fmt(item.price * item.quantity)}
-                    </div>
-                    <button onClick={() => removeItem(idx)}
-                      className="w-7 h-7 rounded-lg flex items-center justify-center transition opacity-40 hover:opacity-100"
-                      style={{ color: '#EF4444' }}>
-                      <X size={14} />
+            {/* ── Cart Items ── */}
+            <div className="px-3 py-2 space-y-1.5">
+              {customers.length === 0 && !hideCustomerSuggest && (
+                <div 
+                  className="border-2 border-dashed rounded-xl p-3 mb-2 flex items-center justify-between gap-2 text-xs font-semibold transition-all duration-200"
+                  style={{ 
+                    background: '#F5F3FF', 
+                    borderColor: '#C4B5FD', 
+                    color: '#6D28D9',
+                    boxShadow: '2px 2px 0px 0px #E2E8F0' 
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <User size={14} className="text-violet-500 shrink-0" />
+                    <span><strong>Suggested:</strong> Assign a customer to track history & loyalty.</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button 
+                      onClick={() => setShowCustomer(true)}
+                      className="px-2.5 py-1 text-white rounded-lg font-bold transition text-[11px] border border-slate-800"
+                      style={{ background: ACCENT, boxShadow: '1.5px 1.5px 0px 0px #1E293B' }}
+                    >
+                      Assign
+                    </button>
+                    <button 
+                      onClick={() => setHideCustomerSuggest(true)}
+                      className="w-5 h-5 rounded flex items-center justify-center text-violet-400 hover:text-violet-750 hover:bg-violet-100 transition shrink-0"
+                      title="Dismiss suggestion"
+                    >
+                      <X size={12} strokeWidth={2.5} />
                     </button>
                   </div>
-                );
-              })
-            )}
-          </div>
-        )}
-
-        {/* ── Promo + Coupon banners ── */}
-        {!showPayment && (
-          <div className="px-3 space-y-1.5 shrink-0">
-            {/* {suggestions.length > 0 && (
-              <div className="rounded-xl p-3" style={{ background: `${AMBER}15`, border: `2px solid ${AMBER}50` }}>
-                <p className="text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5" style={{ color: '#92400E', fontFamily: FONT_H }}>
-                  <Sparkles size={11} style={{ color: AMBER }} /> Frequently ordered with this
-                </p>
-                <div className="flex gap-2 flex-wrap">
-                  {suggestions.map(product => (
-                    <button key={product.id} onClick={() => addToCart(product)}
-                      className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg transition-all duration-200 active:scale-95 border-2"
-                      style={{ background: WHITE, color: FG, borderColor: BORDER, boxShadow: '2px 2px 0px 0px #E2E8F0' }}>
-                      <span className="font-semibold">{product.name}</span>
-                      <span className="font-black" style={{ color: ACCENT }}>+ETB {parseFloat(product.price).toFixed(0)}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )} */}
-
-            {activePromos.map((promo, i) => (
-              <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm border-2"
-                style={{ background: `${EMERALD}15`, borderColor: `${EMERALD}50`, color: '#059669' }}>
-                <Sparkles size={13} />
-                <span className="flex-1 font-semibold">{promo.name}</span>
-                <span className="font-black">-ETB {promo.discount.toFixed(2)}</span>
-              </div>
-            ))}
-
-            {couponData && (
-              <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm mb-1 border-2"
-                style={{ background: `${ACCENT}12`, borderColor: `${ACCENT}40`, color: '#6D28D9' }}>
-                <Ticket size={13} />
-                <span className="flex-1 font-semibold">Coupon: {couponData.code}</span>
-                <span className="font-black">-ETB {couponDiscountAmt.toFixed(2)}</span>
-                <button onClick={() => setCouponData(null)} style={{ color: '#EF4444' }}><X size={13} /></button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── Order Totals ── */}
-        {!showPayment && (
-          <div className="px-3 pb-2 shrink-0">
-            <div className="rounded-xl p-3 space-y-1.5 border-2" style={{ background: WHITE, borderColor: BORDER, boxShadow: '4px 4px 0px 0px #E2E8F0' }}>
-              <div className="flex justify-between text-sm" style={{ color: MUTED }}>
-                <span>Subtotal</span><span style={{ color: FG, fontWeight: 600 }}>ETB {subtotal.toFixed(2)}</span>
-              </div>
-              {totalDiscount > 0 && (
-                <div className="flex justify-between text-sm">
-                  <span style={{ color: MUTED }}>Discount</span>
-                  <span style={{ color: '#059669', fontWeight: 700 }}>-ETB {totalDiscount.toFixed(2)}</span>
                 </div>
               )}
-              {taxBreakdown.map(({ rate, amount }) => (
-                <div key={rate} className="flex justify-between text-sm" style={{ color: MUTED }}>
-                  <span>Tax ({rate}%)</span><span style={{ color: FG, fontWeight: 600 }}>ETB {amount.toFixed(2)}</span>
+              {cartItems.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-8 text-center gap-3">
+                  <div className="w-16 h-16 rounded-2xl flex items-center justify-center border-2" style={{ background: WHITE, borderColor: BORDER, boxShadow: `4px 4px 0px 0px ${BORDER}` }}>
+                    <ShoppingCart size={28} style={{ color: BORDER }} />
+                  </div>
+                  <div>
+                    <div className="font-bold text-sm" style={{ color: MUTED, fontFamily: FONT_H }}>Cart is empty</div>
+                    <div className="text-xs mt-0.5" style={{ color: '#CBD5E1' }}>Tap a product to add it</div>
+                  </div>
+                </div>
+              ) : (
+                cartItems.map((item, idx) => {
+                  const itemColor = item.color || ACCENT;
+                  return (
+                    <div key={idx}
+                      className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl"
+                      style={{ background: WHITE, border: `2px solid ${BORDER}`, boxShadow: `3px 3px 0px 0px ${BORDER}` }}>
+                      {/* Color bar */}
+                      <div className="w-1.5 h-8 rounded-full shrink-0" style={{ background: itemColor }} />
+                      <div className="flex-1 min-w-0">
+                        <div className="font-bold text-sm truncate" style={{ color: FG, fontFamily: FONT_H }}>{item.name}</div>
+                        <div className="text-xs mt-0.5 flex gap-1.5 flex-wrap" style={{ color: MUTED }}>
+                          <span>ETB {item.price.toFixed(2)} each</span>
+                          {parseFloat(item.tax || 0) > 0 && (
+                            <span className="text-emerald-600 font-medium">
+                              · {item.tax}% Tax (ETB {((item.price * item.quantity) * (parseFloat(item.tax || 0) / 100)).toFixed(2)})
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button onClick={() => updateQty(idx, -1)}
+                          className="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-sm transition border-2"
+                          style={{ background: WHITE, color: FG, borderColor: BORDER }}>−</button>
+                        <span className="w-7 text-center font-black text-sm" style={{ color: FG }}>{item.quantity}</span>
+                        <button onClick={() => updateQty(idx, +1)}
+                          className="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-sm transition border-2"
+                          style={{ background: itemColor, color: '#fff', borderColor: FG }}>+</button>
+                      </div>
+                      <div className="font-black text-sm w-16 text-right shrink-0" style={{ color: ACCENT }}>
+                        {fmt(item.price * item.quantity)}
+                      </div>
+                      <button onClick={() => removeItem(idx)}
+                        className="w-7 h-7 rounded-lg flex items-center justify-center transition opacity-40 hover:opacity-100"
+                        style={{ color: '#EF4444' }}>
+                        <X size={14} />
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* ── Promo + Coupon banners ── */}
+            <div className="px-3 space-y-1.5">
+              {activePromos.map((promo, i) => (
+                <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm border-2"
+                  style={{ background: `${EMERALD}15`, borderColor: `${EMERALD}50`, color: '#059669' }}>
+                  <Sparkles size={13} />
+                  <span className="flex-1 font-semibold">{promo.name}</span>
+                  <span className="font-black">-ETB {promo.discount.toFixed(2)}</span>
                 </div>
               ))}
-              <div className="flex justify-between items-center pt-1.5 mt-1" style={{ borderTop: `2px solid ${BORDER}` }}>
-                <span className="font-black text-base" style={{ color: FG, fontFamily: FONT_H }}>Total</span>
-                <span className="font-black text-xl" style={{ color: ACCENT }}>ETB {total.toFixed(2)}</span>
+
+              {couponData && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm mb-1 border-2"
+                  style={{ background: `${ACCENT}12`, borderColor: `${ACCENT}40`, color: '#6D28D9' }}>
+                  <Ticket size={13} />
+                  <span className="flex-1 font-semibold">Coupon: {couponData.code}</span>
+                  <span className="font-black">-ETB {couponDiscountAmt.toFixed(2)}</span>
+                  <button onClick={() => setCouponData(null)} style={{ color: '#EF4444' }}><X size={13} /></button>
+                </div>
+              )}
+            </div>
+
+            {/* ── Order Totals ── */}
+            <div className="px-3 pb-2">
+              <div className="rounded-xl p-3 space-y-1.5 border-2" style={{ background: WHITE, borderColor: BORDER, boxShadow: '4px 4px 0px 0px #E2E8F0' }}>
+                <div className="flex justify-between text-sm" style={{ color: MUTED }}>
+                  <span>Subtotal</span><span style={{ color: FG, fontWeight: 600 }}>ETB {subtotal.toFixed(2)}</span>
+                </div>
+                {totalDiscount > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span style={{ color: MUTED }}>Discount</span>
+                    <span style={{ color: '#059669', fontWeight: 700 }}>-ETB {totalDiscount.toFixed(2)}</span>
+                  </div>
+                )}
+                {taxBreakdown.map(({ rate, amount }) => (
+                  <div key={rate} className="flex justify-between text-sm" style={{ color: MUTED }}>
+                    <span>Tax ({rate}%)</span><span style={{ color: FG, fontWeight: 600 }}>ETB {amount.toFixed(2)}</span>
+                  </div>
+                ))}
+                <div className="flex justify-between items-center pt-1.5 mt-1" style={{ borderTop: `2px solid ${BORDER}` }}>
+                  <span className="font-black text-base" style={{ color: FG, fontFamily: FONT_H }}>Total</span>
+                  <span className="font-black text-xl" style={{ color: ACCENT }}>ETB {total.toFixed(2)}</span>
+                </div>
               </div>
             </div>
+
           </div>
         )}
 
-        {/* ── Action Buttons ── */}
+        {/* ── STICKY ACTION BUTTONS ── */}
         {!showPayment && (
-          <div className="px-3 pb-3 grid grid-cols-2 gap-2 shrink-0">
-            {/* <button onClick={() => setShowCustomer(true)}
-              className="h-11 flex items-center justify-center gap-1.5 rounded-xl text-sm font-bold transition-all duration-200 border-2"
-              style={customers.length > 0
-                ? { background: `${ACCENT}15`, color: ACCENT, borderColor: ACCENT, boxShadow: `2px 2px 0px 0px ${FG}` }
-                : { background: WHITE, color: MUTED, borderColor: BORDER }}>
-              <User size={14} strokeWidth={2.5} />{' '}
-              {customers.length === 0
-                ? 'Customer'
-                : customers.length === 1
-                ? customers[0].name.split(' ')[0]
-                : `${customers[0].name.split(' ')[0]} (+${customers.length - 1})`}
-            </button> */}
+          <div className="px-3 pb-3 pt-3 grid grid-cols-2 gap-2 shrink-0"
+               style={{ borderTop: `2px solid ${BORDER}`, background: WHITE }}>
+            {currentOrder?.status !== ORDER_STATUS.PAID && (
+              <button
+                onClick={handleSendKitchen}
+                disabled={kitchenLoading || !cartItems.length}
+                className="h-11 flex items-center justify-center gap-1.5 rounded-xl text-sm font-black transition-all duration-200 border-2 disabled:opacity-40"
+                style={{
+                  background:
+                    currentOrder?.status === ORDER_STATUS.SENT_TO_KITCHEN ||
+                    currentOrder?.status === ORDER_STATUS.READY
+                      ? '#FEF3C7'
+                      : '#EFF6FF',
+                  color:
+                    currentOrder?.status === ORDER_STATUS.SENT_TO_KITCHEN ||
+                    currentOrder?.status === ORDER_STATUS.READY
+                      ? '#B45309'
+                      : '#1D4ED8',
+                  borderColor:
+                    currentOrder?.status === ORDER_STATUS.SENT_TO_KITCHEN ||
+                    currentOrder?.status === ORDER_STATUS.READY
+                      ? '#FCD34D'
+                      : '#BFDBFE',
+                  boxShadow: `2px 2px 0px 0px ${FG}`
+                }}
+              >
+                {kitchenLoading ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : currentOrder?.status === ORDER_STATUS.SENT_TO_KITCHEN ||
+                  currentOrder?.status === ORDER_STATUS.READY ? (
+                  <RotateCcw size={14} strokeWidth={2.5} />
+                ) : (
+                  <ChefHat size={14} strokeWidth={2.5} />
+                )}
 
+                {currentOrder?.status === ORDER_STATUS.SENT_TO_KITCHEN ||
+                currentOrder?.status === ORDER_STATUS.READY
+                  ? 'Update Kitchen'
+                  : 'Kitchen'}
+              </button>
+            )}
 
-            {/* <button onClick={() => setShowCoupon(true)}
-              className="h-11 flex items-center justify-center gap-1.5 rounded-xl text-sm font-bold transition-all duration-200 border-2"
-              style={coupon
-                ? { background: `${PINK}15`, color: '#9D174D', borderColor: PINK, boxShadow: `2px 2px 0px 0px ${FG}` }
-                : { background: WHITE, color: MUTED, borderColor: BORDER }}>
-              <Ticket size={14} strokeWidth={2.5} /> {coupon ? coupon.code : 'Coupon'}
-            </button> */}
-
-
-            
-            {/* <button onClick={handleSendKitchen} disabled={kitchenLoading || !cartItems.length}
-              className="h-11 flex items-center justify-center gap-1.5 rounded-xl text-sm font-black transition-all duration-200 border-2 disabled:opacity-40"
-              style={{ background: '#EFF6FF', color: '#1D4ED8', borderColor: '#BFDBFE', boxShadow: `2px 2px 0px 0px ${FG}` }}>
-              {kitchenLoading ? <Loader2 size={14} className="animate-spin" /> : <ChefHat size={14} strokeWidth={2.5} />}
-              Kitchen
-            </button> */}
-
-     {currentOrder?.status !== ORDER_STATUS.PAID && (
-  <button
-    onClick={handleSendKitchen}
-    disabled={
-      kitchenLoading ||
-      !cartItems.length
-    }
-    className="h-11 flex items-center justify-center gap-1.5 rounded-xl text-sm font-black transition-all duration-200 border-2 disabled:opacity-40"
-    style={{
-      background:
-        currentOrder?.status === ORDER_STATUS.SENT_TO_KITCHEN ||
-        currentOrder?.status === ORDER_STATUS.READY
-          ? '#FEF3C7'
-          : '#EFF6FF',
-
-      color:
-        currentOrder?.status === ORDER_STATUS.SENT_TO_KITCHEN ||
-        currentOrder?.status === ORDER_STATUS.READY
-          ? '#B45309'
-          : '#1D4ED8',
-
-      borderColor:
-        currentOrder?.status === ORDER_STATUS.SENT_TO_KITCHEN ||
-        currentOrder?.status === ORDER_STATUS.READY
-          ? '#FCD34D'
-          : '#BFDBFE',
-
-      boxShadow: `2px 2px 0px 0px ${FG}`
-    }}
-  >
-    {kitchenLoading ? (
-      <Loader2
-        size={14}
-        className="animate-spin"
-      />
-    ) : currentOrder?.status === ORDER_STATUS.SENT_TO_KITCHEN ||
-      currentOrder?.status === ORDER_STATUS.READY ? (
-      <RotateCcw
-        size={14}
-        strokeWidth={2.5}
-      />
-    ) : (
-      <ChefHat
-        size={14}
-        strokeWidth={2.5}
-      />
-    )}
-
-    {currentOrder?.status === ORDER_STATUS.SENT_TO_KITCHEN ||
-    currentOrder?.status === ORDER_STATUS.READY
-      ? 'Update Kitchen'
-      : 'Kitchen'}
-  </button>
-)}
-
-
-
-            {/* {allowPayment && currentOrder?.status === ORDER_STATUS.READY && <button onClick={() => {
-              setShowPayment(true);
-            }} disabled={!cartItems.length}
-              className="h-11 flex items-center justify-center gap-1.5 rounded-xl font-black text-sm transition-all duration-200 border-2 disabled:opacity-40"
-              style={{ background: ACCENT, color: '#fff', borderColor: FG, boxShadow: `3px 3px 0px 0px ${FG}` }}>
-              <CreditCard size={14} strokeWidth={2.5} /> Charge {cartItems.length > 0 ? fmt(total) : ''}
-            </button>} */}
-
-            {/* Display Kitchen button if order is not yet sent to kitchen OR if new items/changes exist */}
-            
-{/* {(currentOrder?.status !== ORDER_STATUS.SENT_TO_KITCHEN && currentOrder?.status !== ORDER_STATUS.READY) && (
-  <button 
-    onClick={handleSendKitchen} 
-    disabled={kitchenLoading || !cartItems.length}
-    className="h-11 flex items-center justify-center gap-1.5 rounded-xl text-sm font-black transition-all duration-200 border-2 disabled:opacity-40"
-    style={{ background: '#EFF6FF', color: '#1D4ED8', borderColor: '#BFDBFE', boxShadow: `2px 2px 0px 0px ${FG}` }}
-  >
-    {kitchenLoading ? <Loader2 size={14} className="animate-spin" /> : <ChefHat size={14} strokeWidth={2.5} />}
-    Kitchen
-  </button>
-)} */}
-
-{/* Charge / Payment Button */}
-{allowPayment && currentOrder?.status === ORDER_STATUS.READY && (
-  <button 
-    onClick={() => setShowPayment(true)} 
-    disabled={!cartItems.length}
-    className="h-11 flex items-center justify-center gap-1.5 rounded-xl font-black text-sm transition-all duration-200 border-2 disabled:opacity-40"
-    style={{ background: ACCENT, color: '#fff', borderColor: FG, boxShadow: `3px 3px 0px 0px ${FG}` }}
-  >
-    <CreditCard size={14} strokeWidth={2.5} /> Charge {cartItems.length > 0 ? fmt(total) : ''}
-  </button>
-)}
+            {allowPayment && currentOrder?.status === ORDER_STATUS.READY && (
+              <button
+                onClick={() => setShowPayment(true)}
+                disabled={!cartItems.length}
+                className="h-11 flex items-center justify-center gap-1.5 rounded-xl font-black text-sm transition-all duration-200 border-2 disabled:opacity-40"
+                style={{ background: ACCENT, color: '#fff', borderColor: FG, boxShadow: `3px 3px 0px 0px ${FG}` }}
+              >
+                <CreditCard size={14} strokeWidth={2.5} /> Charge {cartItems.length > 0 ? fmt(total) : ''}
+              </button>
+            )}
           </div>
         )}
 
         {/* ══ Payment Panel ══ */}
-      {/* ══ Payment Panel ══ */}
-{allowPayment && showPayment && (
-  <div
-    className="flex-1 flex flex-col overflow-hidden"
-    style={{ background: WHITE }}
-  >
-    <div
-      className="flex items-center justify-between px-4 py-3 shrink-0"
-      style={{ borderBottom: `2px solid ${BORDER}` }}
-    >
-      <div>
-        <div
-          className="font-black text-base"
-          style={{ color: FG, fontFamily: FONT_H }}
-        >
-          Checkout
-        </div>
-
-        <div
-          className="text-3xl font-black mt-0.5"
-          style={{ color: ACCENT, fontFamily: FONT_H }}
-        >
-          {fmt(total)}
-        </div>
-
-        {table && (
-          <div
-            className="text-xs mt-0.5 font-semibold"
-            style={{ color: MUTED }}
-          >
-            Table {table.tableNumber.toUpperCase()}
-          </div>
-        )}
-      </div>
-
-      <button
-        onClick={() => setShowPayment(false)}
-        className="w-9 h-9 rounded-xl flex items-center justify-center transition border-2"
-        style={{
-          background: WHITE,
-          color: MUTED,
-          borderColor: BORDER,
-        }}
-      >
-        <X size={16} strokeWidth={2.5} />
-      </button>
-    </div>
-
-    {/* Split billing header toggle */}
-    <div
-      className="px-4 py-2.5 shrink-0 border-b-2 border-slate-100 flex gap-2"
-      style={{ background: '#FFFDF5' }}
-    >
-      <button
-        type="button"
-        onClick={() => setIsSplit(false)}
-        className={`flex-1 py-2 rounded-xl text-xs font-black border-2 transition ${
-          !isSplit
-            ? 'bg-violet-600 text-white border-slate-800'
-            : 'bg-white text-slate-600 border-slate-200'
-        }`}
-        style={{
-          boxShadow: !isSplit
-            ? 'var(--pop-shadow-sm)'
-            : 'none',
-          fontFamily: FONT_H,
-        }}
-      >
-        Full Bill
-      </button>
-
-      <button
-        type="button"
-        onClick={() => setIsSplit(true)}
-        className={`flex-1 py-2 rounded-xl text-xs font-black border-2 transition ${
-          isSplit
-            ? 'bg-violet-600 text-white border-slate-800'
-            : 'bg-white text-slate-600 border-slate-200'
-        }`}
-        style={{
-          boxShadow: isSplit
-            ? 'var(--pop-shadow-sm)'
-            : 'none',
-          fontFamily: FONT_H,
-        }}
-      >
-        Split Bill
-      </button>
-    </div>
-
-    <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-3 pt-3">
-      {!isSplit ? (
-        <>
-          {/* ═══════════════════════════════════════════
-              FULL BILL PAYMENT METHODS
-          ═══════════════════════════════════════════ */}
-          <div
-            className="text-xs font-black uppercase tracking-wider mb-2"
-            style={{
-              color: MUTED,
-              fontFamily: FONT_H,
-            }}
-          >
-            Payment Method
-          </div>
-
-          {loadingPaymentMethods ? (
-            <div
-              className="text-center py-5 text-sm font-bold"
-              style={{ color: MUTED }}
-            >
-              Loading payment methods...
-            </div>
-          ) : paymentMethods.length === 0 ? (
-            <div
-              className="text-center py-5 rounded-xl border-2"
-              style={{
-                color: '#DC2626',
-                background: '#FEF2F2',
-                borderColor: '#FECACA',
-              }}
-            >
-              <div className="text-sm font-black">
-                No payment methods available
+        {allowPayment && showPayment && (
+          <div className="flex-1 flex flex-col overflow-hidden min-h-0" style={{ background: WHITE }}>
+            <div className="flex items-center justify-between px-4 py-3 shrink-0" style={{ borderBottom: `2px solid ${BORDER}` }}>
+              <div>
+                <div className="font-black text-base" style={{ color: FG, fontFamily: FONT_H }}>
+                  Checkout
+                </div>
+                <div className="text-3xl font-black mt-0.5" style={{ color: ACCENT, fontFamily: FONT_H }}>
+                  {fmt(total)}
+                </div>
+                {table && (
+                  <div className="text-xs mt-0.5 font-semibold" style={{ color: MUTED }}>
+                    Table {table.tableNumber.toUpperCase()}
+                  </div>
+                )}
               </div>
 
-              <div className="text-xs mt-1">
-                Enable at least one payment method from Payment Methods.
-              </div>
+              <button
+                onClick={() => setShowPayment(false)}
+                className="w-9 h-9 rounded-xl flex items-center justify-center transition border-2"
+                style={{ background: WHITE, color: MUTED, borderColor: BORDER }}
+              >
+                <X size={16} strokeWidth={2.5} />
+              </button>
             </div>
-          ) : (
-            <div className="space-y-2">
-              {paymentMethods.map(method => {
-                const methodName = String(
-                  method.name || ''
-                ).trim();
 
-                const methodKey = methodName.toUpperCase();
+            {/* Split billing header toggle */}
+            <div className="px-4 py-2.5 shrink-0 border-b-2 border-slate-100 flex gap-2" style={{ background: '#FFFDF5' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSplit(false);
+                }}
+                className={`flex-1 py-2 rounded-xl text-xs font-black border-2 transition ${
+                  !isSplit
+                    ? 'bg-violet-600 text-white border-slate-800'
+                    : 'bg-white text-slate-600 border-slate-200'
+                }`}
+                style={{ boxShadow: !isSplit ? 'var(--pop-shadow-sm)' : 'none', fontFamily: FONT_H }}
+              >
+                Full Bill
+              </button>
 
-                const isSelected =
-                  payMethod === methodName;
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSplit(true);
+                  setPutRemainingOnCredit(false);
+                  setPayAmount('');
+                }}
+                className={`flex-1 py-2 rounded-xl text-xs font-black border-2 transition ${
+                  isSplit
+                    ? 'bg-violet-600 text-white border-slate-800'
+                    : 'bg-white text-slate-600 border-slate-200'
+                }`}
+                style={{ boxShadow: isSplit ? 'var(--pop-shadow-sm)' : 'none', fontFamily: FONT_H }}
+              >
+                Split Bill
+              </button>
+            </div>
 
-                const isCash =
-                  methodKey === 'CASH';
-
-                const isUpi =
-                  methodKey === 'UPI';
-
-                return (
-                  <button
-                    key={method.id}
-                    type="button"
-                    onClick={() => {
-                      setPayMethod(methodName);
-
-                      // Reset fields when switching methods
-                      if (!isCash) {
-                        setCashReceived('');
-                      }
-
-                      if (isCash) {
-                        setCardRef('');
-                      }
-                    }}
-                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 border-2"
-                    style={
-                      isSelected
-                        ? {
-                            borderColor: ACCENT,
-                            background: `${ACCENT}12`,
-                            boxShadow: `3px 3px 0px 0px ${FG}`,
-                          }
-                        : {
-                            borderColor: BORDER,
-                            background: WHITE,
-                          }
-                    }
-                  >
-                    {/* Icon */}
-                    <div
-                      className="w-9 h-9 rounded-xl flex items-center justify-center border-2 shrink-0"
-                      style={{
-                        background: isSelected
-                          ? ACCENT
-                          : '#F8FAFC',
-                        borderColor: isSelected
-                          ? FG
-                          : BORDER,
+            <div className="flex-1 overflow-y-auto min-h-0 px-4 pb-4 space-y-3 pt-3">
+              {!isSplit ? (
+                <>
+                  {/* PAYMENT TYPE TOGGLE */}
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPutRemainingOnCredit(false);
+                        setPayAmount('');
                       }}
+                      className={`flex-1 py-2.5 rounded-xl text-xs font-black border-2 transition ${
+                        !putRemainingOnCredit
+                          ? 'bg-violet-600 text-white border-slate-800'
+                          : 'bg-white text-slate-600 border-slate-200'
+                      }`}
+                      style={{ boxShadow: !putRemainingOnCredit ? 'var(--pop-shadow-sm)' : 'none', fontFamily: FONT_H }}
                     >
-                      {isCash ? (
-                        <Wallet
-                          size={16}
-                          strokeWidth={2.5}
-                          color={
-                            isSelected ? '#fff' : MUTED
-                          }
-                        />
-                      ) : isUpi ? (
-                        <Smartphone
-                          size={16}
-                          strokeWidth={2.5}
-                          color={
-                            isSelected ? '#fff' : MUTED
-                          }
-                        />
-                      ) : (
-                        <CreditCard
-                          size={16}
-                          strokeWidth={2.5}
-                          color={
-                            isSelected ? '#fff' : MUTED
-                          }
-                        />
+                      Normal Payment
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPutRemainingOnCredit(true);
+                      }}
+                      className={`flex-1 py-2.5 rounded-xl text-xs font-black border-2 transition ${
+                        putRemainingOnCredit
+                          ? 'bg-amber-500 text-white border-slate-800'
+                          : 'bg-white text-slate-600 border-slate-200'
+                      }`}
+                      style={{ boxShadow: putRemainingOnCredit ? 'var(--pop-shadow-sm)' : 'none', fontFamily: FONT_H }}
+                    >
+                      Credit / Loan
+                    </button>
+                  </div>
+
+                  {/* CREDIT / LOAN UI */}
+                  {putRemainingOnCredit && (
+                    <div className="rounded-xl p-3 space-y-3 border-2" style={{ background: '#FFFBEB', borderColor: '#FCD34D' }}>
+                      {customers.length !== 1 && (
+                        <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs border-2"
+                          style={{ background: '#FEF2F2', borderColor: '#FECACA', color: '#B91C1C' }}>
+                          <AlertTriangle size={13} className="shrink-0" />
+                          <span>Select exactly one customer before putting any amount on credit.</span>
+                        </div>
                       )}
-                    </div>
 
-                    {/* ACTUAL DATABASE NAME */}
-                    <span
-                      className="font-bold text-left truncate"
-                      style={{
-                        color: FG,
-                        fontFamily: FONT_H,
-                      }}
-                    >
-                      {methodName}
-                    </span>
-
-                    {isSelected && (
-                      <Check
-                        size={18}
-                        strokeWidth={3}
-                        className="ml-auto shrink-0"
-                        style={{ color: ACCENT }}
-                      />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          {/* ═══════════════════════════════════════════
-              CASH PAYMENT
-          ═══════════════════════════════════════════ */}
-          {payMethod &&
-            String(payMethod).trim().toUpperCase() ===
-              'CASH' && (
-              <div
-                className="rounded-xl p-3 space-y-2 border-2"
-                style={{
-                  background: WHITE,
-                  borderColor: BORDER,
-                }}
-              >
-                <label
-                  className="block text-xs font-black uppercase tracking-wide"
-                  style={{
-                    color: MUTED,
-                    fontFamily: FONT_H,
-                  }}
-                >
-                  Cash Received (ETB)
-                </label>
-
-                <input
-                  type="number"
-                  step="0.01"
-                  value={cashReceived}
-                  onChange={e =>
-                    setCashReceived(e.target.value)
-                  }
-                  placeholder={total.toFixed(2)}
-                  className="w-full rounded-xl px-3 py-2.5 text-lg font-mono font-bold focus:outline-none border-2 transition"
-                  style={{
-                    background: '#F8FAFC',
-                    borderColor: BORDER,
-                    color: FG,
-                  }}
-                  onFocus={e => {
-                    e.target.style.borderColor =
-                      ACCENT;
-                    e.target.style.boxShadow = `4px 4px 0px 0px ${ACCENT}`;
-                  }}
-                  onBlur={e => {
-                    e.target.style.borderColor =
-                      BORDER;
-                    e.target.style.boxShadow =
-                      'none';
-                  }}
-                />
-
-                {cashChange !== null &&
-                  cashChange >= 0 && (
-                    <div
-                      className="flex justify-between rounded-xl px-3 py-2 border-2"
-                      style={{
-                        background: `${EMERALD}15`,
-                        borderColor: `${EMERALD}60`,
-                      }}
-                    >
-                      <span
-                        className="text-sm font-bold"
-                        style={{ color: '#059669' }}
-                      >
-                        Change to Return
-                      </span>
-
-                      <span
-                        className="font-black"
-                        style={{ color: '#059669' }}
-                      >
-                        {fmt(cashChange)}
-                      </span>
-                    </div>
-                  )}
-              </div>
-            )}
-
-          {/* ═══════════════════════════════════════════
-              UPI PAYMENT
-          ═══════════════════════════════════════════ */}
-          {payMethod &&
-            String(payMethod).trim().toUpperCase() ===
-              'UPI' && (
-              <>
-                {(() => {
-                  const selectedUpiMethod =
-                    paymentMethods.find(
-                      method =>
-                        String(method.name)
-                          .trim()
-                          .toUpperCase() === 'UPI'
-                    );
-
-                  return selectedUpiMethod?.upiId ? (
-                    <div
-                      className="rounded-xl p-4 flex flex-col items-center gap-3 border-2"
-                      style={{
-                        background: WHITE,
-                        borderColor: BORDER,
-                      }}
-                    >
-                      <div
-                        className="text-sm font-semibold"
-                        style={{ color: MUTED }}
-                      >
-                        Scan to pay {fmt(total)}
+                      <div>
+                        <div className="text-[10px] font-black uppercase tracking-wide mb-1.5" style={{ color: MUTED, fontFamily: FONT_H }}>
+                          Customer Account
+                        </div>
+                        {customers.length === 1 ? (
+                          <div className="flex items-center justify-between px-3 py-2 rounded-lg border-2" style={{ background: WHITE, borderColor: '#C4B5FD' }}>
+                            <div className="flex items-center gap-2 min-w-0">
+                              <User size={14} className="shrink-0" style={{ color: ACCENT }} />
+                              <div className="min-w-0">
+                                <div className="text-sm font-bold truncate" style={{ color: FG }}>
+                                  {customers[0].name}
+                                </div>
+                                <div className="text-xs truncate" style={{ color: MUTED }}>
+                                  {customers[0].phone || customers[0].email || 'No contact info'}
+                                </div>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => removeCustomer(customers[0].id)}
+                              className="text-xs font-bold text-rose-500 hover:text-rose-700 shrink-0 px-1"
+                            >
+                              Change
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setShowCustomer(true)}
+                            className="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg text-xs font-black border-2 transition"
+                            style={{ background: WHITE, color: ACCENT, borderColor: ACCENT, boxShadow: '2px 2px 0px 0px #1E293B', fontFamily: FONT_H }}
+                          >
+                            <User size={13} strokeWidth={2.5} />
+                            Select Customer
+                          </button>
+                        )}
                       </div>
 
-                      <div
-                        className="bg-white p-2 rounded-xl border-2"
-                        style={{ borderColor: BORDER }}
-                      >
-                        <QRCodeSVG
-                          value={`upi://pay?pa=${encodeURIComponent(
-                            selectedUpiMethod.upiId
-                          )}&am=${total.toFixed(
-                            2
-                          )}&cu=ETB&tn=Safina-Coffee-Restaurant`}
-                          size={130}
+                      <div>
+                        <label className="block text-[10px] font-black uppercase tracking-wide mb-1.5" style={{ color: MUTED, fontFamily: FONT_H }}>
+                          Amount to Pay Now (ETB)
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          max={total}
+                          value={payAmount}
+                          onChange={(e) => setPayAmount(e.target.value)}
+                          placeholder="0.00"
+                          className="w-full rounded-xl px-3 py-2.5 text-lg font-mono font-bold focus:outline-none border-2 transition"
+                          style={{ background: WHITE, borderColor: BORDER, color: FG }}
+                          onFocus={(e) => {
+                            e.target.style.borderColor = ACCENT;
+                            e.target.style.boxShadow = `4px 4px 0px 0px ${ACCENT}`;
+                          }}
+                          onBlur={(e) => {
+                            e.target.style.borderColor = BORDER;
+                            e.target.style.boxShadow = 'none';
+                          }}
                         />
                       </div>
 
-                      <div
-                        className="text-xs font-semibold"
-                        style={{ color: MUTED }}
-                      >
-                        UPI ID:{' '}
-                        {selectedUpiMethod.upiId}
+                      <div className="rounded-xl p-3 space-y-1.5 border-2" style={{ background: WHITE, borderColor: '#FDE68A' }}>
+                        <div className="flex justify-between text-sm">
+                          <span style={{ color: MUTED }}>Order Total</span>
+                          <span style={{ color: FG, fontWeight: 700 }}>{fmt(total)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span style={{ color: MUTED }}>Pay Now</span>
+                          <span style={{ color: '#059669', fontWeight: 700 }}>{fmt(parsedPayAmount)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm pt-1.5 mt-1" style={{ borderTop: `2px solid #FDE68A` }}>
+                          <span style={{ color: '#B45309', fontWeight: 700 }}>Credit / Loan</span>
+                          <span style={{ color: '#B45309', fontWeight: 900, fontSize: 16 }}>{fmt(creditAmount)}</span>
+                        </div>
                       </div>
-                    </div>
-                  ) : (
-                    <div
-                      className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-xs border-2"
-                      style={{
-                        background: '#FFFBEB',
-                        borderColor: '#FDE68A',
-                        color: '#92400E',
-                      }}
-                    >
-                      <AlertTriangle
-                        size={13}
-                        className="shrink-0"
-                      />
 
-                      <span>
-                        No UPI ID configured. Go to
-                        Payment Methods.
-                      </span>
-                    </div>
-                  );
-                })()}
-              </>
-            )}
-
-          {/* ═══════════════════════════════════════════
-              OTHER / CUSTOM PAYMENT METHODS
-          ═══════════════════════════════════════════ */}
-          {payMethod &&
-            !['CASH', 'UPI'].includes(
-              String(payMethod)
-                .trim()
-                .toUpperCase()
-            ) && (
-              <div
-                className="rounded-xl p-3 border-2"
-                style={{
-                  background: WHITE,
-                  borderColor: BORDER,
-                }}
-              >
-                <label
-                  className="block text-xs font-black uppercase tracking-wide mb-2"
-                  style={{
-                    color: MUTED,
-                    fontFamily: FONT_H,
-                  }}
-                >
-                  Transaction Reference (optional)
-                </label>
-
-                <input
-                  value={cardRef}
-                  onChange={e =>
-                    setCardRef(e.target.value)
-                  }
-                  placeholder="e.g. TXN-1234567"
-                  className="w-full rounded-xl px-3 py-2.5 focus:outline-none border-2 transition font-mono"
-                  style={{
-                    background: '#F8FAFC',
-                    borderColor: BORDER,
-                    color: FG,
-                  }}
-                  onFocus={e => {
-                    e.target.style.borderColor =
-                      ACCENT;
-                    e.target.style.boxShadow = `4px 4px 0px 0px ${ACCENT}`;
-                  }}
-                  onBlur={e => {
-                    e.target.style.borderColor =
-                      BORDER;
-                    e.target.style.boxShadow =
-                      'none';
-                  }}
-                />
-              </div>
-            )}
-        </>
-      ) : (
-        <>
-          {/* ═══════════════════════════════════════════
-              SPLIT BILL
-          ═══════════════════════════════════════════ */}
-
-          <div className="flex gap-2 p-1 bg-slate-100 border-2 border-slate-800 rounded-xl mb-3">
-            <button
-              type="button"
-              onClick={() => {
-                setSplitMode('equal');
-                setPaidSplits([]);
-                setActiveSplitIdx(null);
-              }}
-              className={`flex-1 py-1.5 rounded-lg text-xs font-black transition ${
-                splitMode === 'equal'
-                  ? 'bg-slate-800 text-white'
-                  : 'text-slate-600 hover:text-slate-800'
-              }`}
-              style={{ fontFamily: FONT_H }}
-            >
-              Equal Parts
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setSplitMode('item');
-                setPaidSplits([]);
-                setActiveSplitIdx(null);
-              }}
-              className={`flex-1 py-1.5 rounded-lg text-xs font-black transition ${
-                splitMode === 'item'
-                  ? 'bg-slate-800 text-white'
-                  : 'text-slate-600 hover:text-slate-800'
-              }`}
-              style={{ fontFamily: FONT_H }}
-            >
-              Split by Items
-            </button>
-          </div>
-
-          {splitMode === 'equal' ? (
-            <div
-              className="flex items-center justify-between p-3 bg-white border-2 border-slate-850 rounded-2xl mb-4"
-              style={{
-                boxShadow: 'var(--pop-shadow-sm)',
-              }}
-            >
-              <span className="text-xs font-bold text-slate-700">
-                Number of Guests
-              </span>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEqualCount(c =>
-                      Math.max(2, c - 1)
-                    );
-                    setPaidSplits([]);
-                    setActiveSplitIdx(null);
-                  }}
-                  className="w-8 h-8 rounded-lg border-2 border-slate-800 flex items-center justify-center font-black"
-                >
-                  -
-                </button>
-
-                <span className="w-8 text-center font-black text-sm">
-                  {equalCount}
-                </span>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEqualCount(c =>
-                      Math.min(10, c + 1)
-                    );
-                    setPaidSplits([]);
-                    setActiveSplitIdx(null);
-                  }}
-                  className="w-8 h-8 rounded-lg border-2 border-slate-800 bg-slate-800 text-white flex items-center justify-center font-black"
-                >
-                  +
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-2 mb-4">
-              <div className="text-xs font-bold text-slate-500 mb-1">
-                Assign Items to Guests:
-              </div>
-
-              {cartItems.map((item, itemIdx) => {
-                const guestIdx =
-                  getAssignedGuest(itemIdx);
-
-                return (
-                  <div
-                    key={itemIdx}
-                    className="flex items-center justify-between p-2.5 bg-white border-2 border-slate-200 rounded-xl text-xs"
-                    style={{
-                      boxShadow:
-                        'var(--pop-shadow-sm)',
-                    }}
-                  >
-                    <div className="truncate pr-2 font-medium text-slate-800 flex flex-col">
-                      <span>
-                        {item.name}{' '}
-                        <span className="text-slate-400">
-                          × {item.quantity}
-                        </span>
-                      </span>
-
-                      {parseFloat(item.tax || 0) >
-                        0 && (
-                        <span className="text-[10px] text-emerald-600 font-bold leading-none mt-0.5">
-                          {item.tax}% Tax (ETB{' '}
-                          {(
-                            item.price *
-                            item.quantity *
-                            (parseFloat(
-                              item.tax || 0
-                            ) /
-                              100)
-                          ).toFixed(2)}
-                          )
-                        </span>
-                      )}
-                    </div>
-
-                    <select
-                      value={guestIdx}
-                      onChange={e => {
-                        setItemAssignments(
-                          prev => ({
-                            ...prev,
-                            [itemIdx]:
-                              parseInt(
-                                e.target.value
-                              ),
-                          })
-                        );
-
-                        setPaidSplits([]);
-                        setActiveSplitIdx(null);
-                      }}
-                      className="bg-slate-50 border-2 border-slate-300 rounded-lg px-2 py-1 focus:outline-none focus:border-slate-800 font-semibold text-slate-700"
-                    >
-                      {Array.from({
-                        length: numGuests,
-                      }).map((_, g) => (
-                        <option
-                          key={g}
-                          value={g}
-                        >
-                          {getGuestName(g)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Split parts list */}
-          <div className="space-y-2.5">
-            {(splitMode === 'equal'
-              ? getEqualSplits()
-              : getItemSplits()
-            ).map(part => {
-              const amt =
-                splitMode === 'equal'
-                  ? part.amount
-                  : part.total;
-
-              if (amt === 0) return null;
-
-              return (
-                <div
-                  key={part.index}
-                  className="border-2 border-slate-800 rounded-2xl p-3 bg-white flex items-center justify-between"
-                  style={{
-                    boxShadow:
-                      'var(--pop-shadow-sm)',
-                  }}
-                >
-                  <div>
-                    <div
-                      className="text-xs font-black uppercase tracking-wider text-slate-400"
-                      style={{ fontFamily: FONT_H }}
-                    >
-                      {splitMode === 'equal'
-                        ? `Guest ${part.index + 1}`
-                        : part.name}
-                    </div>
-
-                    <div className="text-lg font-black text-slate-800 mt-0.5">
-                      {fmt(amt)}
-                    </div>
-                  </div>
-
-                  <div>
-                    {part.paid ? (
-                      <div className="flex items-center gap-2">
-                        <span className="px-2.5 py-1 bg-[#D1FAE5] text-emerald-800 border-2 border-emerald-300 rounded-lg text-[10px] font-black uppercase flex items-center gap-1">
-                          <Check
-                            size={11}
-                            strokeWidth={3}
-                          />
-
-                          {part.method}
-                        </span>
-
-                        <button
-                          type="button"
-                          onClick={() =>
-                            resetSplitPayment(
-                              part.index
-                            )
-                          }
-                          className="w-7 h-7 flex items-center justify-center rounded-lg border-2 border-slate-200 text-rose-500 hover:border-slate-800 transition"
-                          title="Reset Payment"
-                        >
-                          <X
-                            size={13}
-                            strokeWidth={2.5}
-                          />
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setActiveSplitIdx(
-                            part.index
-                          );
-                          setPayMethod(null);
-                          setCashReceived('');
-                          setCardRef('');
-                        }}
-                        className="px-3 py-1.5 bg-violet-600 text-white border-2 border-slate-800 rounded-xl text-xs font-black hover:bg-violet-700 transition"
-                        style={{
-                          boxShadow:
-                            '2px 2px 0px 0px #1E293B',
-                          fontFamily: FONT_H,
-                        }}
-                      >
-                        Pay Share
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* ═══════════════════════════════════════════
-              ACTIVE SPLIT PAYMENT MODAL
-          ═══════════════════════════════════════════ */}
-          {activeSplitIdx !== null && (
-            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-55 flex items-center justify-center p-4">
-              <div
-                className="bg-white border-2 border-slate-800 rounded-2xl w-full max-w-sm p-5 space-y-4"
-                style={{
-                  boxShadow: 'var(--pop-shadow-lg)',
-                }}
-              >
-                <div className="flex justify-between items-center pb-2 border-b-2">
-                  <div>
-                    <div
-                      className="text-[10px] font-black uppercase tracking-wider text-slate-400"
-                      style={{ fontFamily: FONT_H }}
-                    >
-                      Collect Share Payment
-                    </div>
-
-                    <div
-                      className="text-base font-black text-slate-850"
-                      style={{ fontFamily: FONT_H }}
-                    >
-                      {splitMode === 'equal'
-                        ? `Guest ${activeSplitIdx + 1}`
-                        : getGuestName(
-                            activeSplitIdx
-                          )}
-                    </div>
-                  </div>
-
-                  <div className="text-xl font-black text-violet-600">
-                    {fmt(
-                      splitMode === 'equal'
-                        ? getEqualSplits()[
-                            activeSplitIdx
-                          ].amount
-                        : getItemSplits()[
-                            activeSplitIdx
-                          ].total
-                    )}
-                  </div>
-                </div>
-
-                <div
-                  className="text-xs font-black uppercase tracking-wider text-slate-500 mb-1"
-                  style={{ fontFamily: FONT_H }}
-                >
-                  Select Method
-                </div>
-
-                {/* Dynamic payment methods */}
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                  {loadingPaymentMethods ? (
-                    <div className="col-span-full text-center py-3 text-xs font-bold text-slate-400">
-                      Loading payment methods...
-                    </div>
-                  ) : paymentMethods.length === 0 ? (
-                    <div className="col-span-full text-center py-3 text-xs font-bold text-red-500">
-                      No payment methods are enabled
-                    </div>
-                  ) : (
-                    paymentMethods.map(method => {
-                      const methodName = String(
-                        method.name || ''
-                      ).trim();
-
-                      const isSelected =
-                        payMethod === methodName;
-
-                      return (
-                        <button
-                          key={method.id}
-                          type="button"
-                          onClick={() => {
-                            setPayMethod(
-                              methodName
-                            );
-
-                            const methodKey =
-                              methodName.toUpperCase();
-
-                            if (
-                              methodKey !== 'CASH'
-                            ) {
-                              setCashReceived(
-                                ''
-                              );
-                            }
-
-                            if (
-                              methodKey === 'CASH'
-                            ) {
-                              setCardRef('');
-                            }
-                          }}
-                          className={`py-2 px-2 rounded-xl text-xs font-black border-2 transition truncate ${
-                            isSelected
-                              ? 'bg-violet-600 text-white border-slate-800'
-                              : 'bg-white text-slate-600 border-slate-200'
-                          }`}
-                          style={{
-                            boxShadow: isSelected
-                              ? 'var(--pop-shadow-sm)'
-                              : 'none',
-                            fontFamily: FONT_H,
-                          }}
-                          title={methodName}
-                        >
-                          {methodName}
-                        </button>
-                      );
-                    })
-                  )}
-                </div>
-
-                {/* Split cash */}
-                {payMethod &&
-                  String(payMethod)
-                    .trim()
-                    .toUpperCase() ===
-                    'CASH' && (
-                    <div className="space-y-1.5">
-                      <label
-                        className="block text-[10px] font-black uppercase tracking-wide text-slate-400"
-                        style={{
-                          fontFamily: FONT_H,
-                        }}
-                      >
-                        Cash Received (ETB)
-                      </label>
-
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={cashReceived}
-                        placeholder={(
-                          splitMode === 'equal'
-                            ? getEqualSplits()[
-                                activeSplitIdx
-                              ].amount
-                            : getItemSplits()[
-                                activeSplitIdx
-                              ].total
-                        ).toFixed(2)}
-                        onChange={e =>
-                          setCashReceived(
-                            e.target.value
-                          )
-                        }
-                        className="w-full rounded-xl px-3 py-2 text-sm font-bold focus:outline-none border-2 transition bg-slate-50 border-slate-200 font-mono"
-                      />
-
-                      {cashReceived && (
-                        <div className="flex justify-between text-xs font-bold text-emerald-600 bg-[#D1FAE5] px-2.5 py-1.5 rounded-lg border-2 border-emerald-350">
-                          <span>
-                            Change to Return
-                          </span>
-
-                          <span>
-                            {fmt(
-                              Math.max(
-                                0,
-                                parseFloat(
-                                  cashReceived
-                                ) -
-                                  (splitMode ===
-                                  'equal'
-                                    ? getEqualSplits()[
-                                        activeSplitIdx
-                                      ].amount
-                                    : getItemSplits()[
-                                        activeSplitIdx
-                                      ].total)
-                              )
-                            )}
-                          </span>
+                      {isFullCredit && (
+                        <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs border-2"
+                          style={{ background: '#EFF6FF', borderColor: '#BFDBFE', color: '#1D4ED8' }}>
+                          <AlertTriangle size={13} className="shrink-0" />
+                          <span>Full bill will be added as a loan for this customer.</span>
                         </div>
                       )}
                     </div>
                   )}
 
-                {/* Split UPI */}
-                {payMethod &&
-                  String(payMethod)
-                    .trim()
-                    .toUpperCase() ===
-                    'UPI' && (
+                  {/* PAYMENT METHODS */}
+                  {(!putRemainingOnCredit || parsedPayAmount > 0) && (
+                    <>
+                      <div className="text-xs font-black uppercase tracking-wider mb-2" style={{ color: MUTED, fontFamily: FONT_H }}>
+                        Payment Method
+                      </div>
+
+                      {loadingPaymentMethods ? (
+                        <div className="text-center py-5 text-sm font-bold" style={{ color: MUTED }}>
+                          Loading payment methods...
+                        </div>
+                      ) : paymentMethods.length === 0 ? (
+                        <div className="text-center py-5 rounded-xl border-2" style={{ color: '#DC2626', background: '#FEF2F2', borderColor: '#FECACA' }}>
+                          <div className="text-sm font-black">No payment methods available</div>
+                          <div className="text-xs mt-1">Enable at least one payment method from Payment Methods.</div>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {paymentMethods.map(method => {
+                            const methodName = String(method.name || '').trim();
+                            const methodKey = methodName.toUpperCase();
+                            const isSelected = payMethod === methodName;
+                            const isCash = methodKey === 'CASH';
+                            const isUpi = methodKey === 'UPI';
+
+                            return (
+                              <button
+                                key={method.id}
+                                type="button"
+                                onClick={() => {
+                                  setPayMethod(methodName);
+                                  if (!isCash) setCashReceived('');
+                                  if (isCash) setCardRef('');
+                                }}
+                                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 border-2"
+                                style={
+                                  isSelected
+                                    ? { borderColor: ACCENT, background: `${ACCENT}12`, boxShadow: `3px 3px 0px 0px ${FG}` }
+                                    : { borderColor: BORDER, background: WHITE }
+                                }
+                              >
+                                <div className="w-9 h-9 rounded-xl flex items-center justify-center border-2 shrink-0"
+                                  style={{ background: isSelected ? ACCENT : '#F8FAFC', borderColor: isSelected ? FG : BORDER }}>
+                                  {isCash ? (
+                                    <Wallet size={16} strokeWidth={2.5} color={isSelected ? '#fff' : MUTED} />
+                                  ) : isUpi ? (
+                                    <Smartphone size={16} strokeWidth={2.5} color={isSelected ? '#fff' : MUTED} />
+                                  ) : (
+                                    <CreditCard size={16} strokeWidth={2.5} color={isSelected ? '#fff' : MUTED} />
+                                  )}
+                                </div>
+                                <span className="font-bold text-left truncate" style={{ color: FG, fontFamily: FONT_H }}>
+                                  {methodName}
+                                </span>
+                                {isSelected && (
+                                  <Check size={18} strokeWidth={3} className="ml-auto shrink-0" style={{ color: ACCENT }} />
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {/* CASH PAYMENT */}
+                  {(!putRemainingOnCredit || parsedPayAmount > 0) &&
+                    payMethod &&
+                    String(payMethod).trim().toUpperCase() === 'CASH' && (
+                    <div className="rounded-xl p-3 space-y-2 border-2" style={{ background: WHITE, borderColor: BORDER }}>
+                      <label className="block text-xs font-black uppercase tracking-wide" style={{ color: MUTED, fontFamily: FONT_H }}>
+                        Cash Received (ETB)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={cashReceived}
+                        onChange={e => setCashReceived(e.target.value)}
+                        placeholder={putRemainingOnCredit && parsedPayAmount > 0 ? parsedPayAmount.toFixed(2) : total.toFixed(2)}
+                        className="w-full rounded-xl px-3 py-2.5 text-lg font-mono font-bold focus:outline-none border-2 transition"
+                        style={{ background: '#F8FAFC', borderColor: BORDER, color: FG }}
+                        onFocus={e => {
+                          e.target.style.borderColor = ACCENT;
+                          e.target.style.boxShadow = `4px 4px 0px 0px ${ACCENT}`;
+                        }}
+                        onBlur={e => {
+                          e.target.style.borderColor = BORDER;
+                          e.target.style.boxShadow = 'none';
+                        }}
+                      />
+                      {(() => {
+                        const cashTarget = putRemainingOnCredit && parsedPayAmount > 0 ? parsedPayAmount : total;
+                        const change = cashReceived ? Math.max(0, parseFloat(cashReceived) - cashTarget) : null;
+                        return change !== null && change >= 0 ? (
+                          <div className="flex justify-between rounded-xl px-3 py-2 border-2" style={{ background: `${EMERALD}15`, borderColor: `${EMERALD}60` }}>
+                            <span className="text-sm font-bold" style={{ color: '#059669' }}>Change to Return</span>
+                            <span className="font-black" style={{ color: '#059669' }}>{fmt(change)}</span>
+                          </div>
+                        ) : null;
+                      })()}
+                    </div>
+                  )}
+
+                  {/* UPI PAYMENT */}
+                  {(!putRemainingOnCredit || parsedPayAmount > 0) &&
+                    payMethod &&
+                    String(payMethod).trim().toUpperCase() === 'UPI' && (
                     <>
                       {(() => {
-                        const selectedUpiMethod =
-                          paymentMethods.find(
-                            method =>
-                              String(
-                                method.name
-                              )
-                                .trim()
-                                .toUpperCase() ===
-                              'UPI'
-                          );
-
-                        const splitAmount =
-                          splitMode === 'equal'
-                            ? getEqualSplits()[
-                                activeSplitIdx
-                              ].amount
-                            : getItemSplits()[
-                                activeSplitIdx
-                              ].total;
+                        const selectedUpiMethod = paymentMethods.find(method => String(method.name).trim().toUpperCase() === 'UPI');
+                        const upiAmount = putRemainingOnCredit && parsedPayAmount > 0 ? parsedPayAmount : total;
 
                         return selectedUpiMethod?.upiId ? (
-                          <div className="flex flex-col items-center gap-2 p-3 bg-slate-50 border-2 rounded-xl">
-                            <div className="text-[10px] font-semibold text-slate-500">
-                              Scan to Pay Share
+                          <div className="rounded-xl p-4 flex flex-col items-center gap-3 border-2" style={{ background: WHITE, borderColor: BORDER }}>
+                            <div className="text-sm font-semibold" style={{ color: MUTED }}>
+                              Scan to pay {fmt(upiAmount)}
                             </div>
-
-                            <div className="bg-white p-1 rounded-lg border">
+                            <div className="bg-white p-2 rounded-xl border-2" style={{ borderColor: BORDER }}>
                               <QRCodeSVG
-                                value={`upi://pay?pa=${encodeURIComponent(
-                                  selectedUpiMethod.upiId
-                                )}&am=${splitAmount.toFixed(
-                                  2
-                                )}&cu=ETB&tn=Safina-Coffee-Restaurant-Share`}
-                                size={90}
+                                value={`upi://pay?pa=${encodeURIComponent(selectedUpiMethod.upiId)}&am=${upiAmount.toFixed(2)}&cu=ETB&tn=Safina-Coffee-Restaurant`}
+                                size={130}
                               />
                             </div>
-
-                            <div className="text-[9px] font-semibold text-slate-400 truncate max-w-[200px]">
-                              {
-                                selectedUpiMethod.upiId
-                              }
+                            <div className="text-xs font-semibold" style={{ color: MUTED }}>
+                              UPI ID: {selectedUpiMethod.upiId}
                             </div>
                           </div>
                         ) : (
-                          <div className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-xs border-2 bg-amber-50 border-amber-200 text-amber-800">
-                            <AlertTriangle
-                              size={13}
-                              className="shrink-0"
-                            />
-
-                            <span>
-                              No UPI ID configured.
-                            </span>
+                          <div className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-xs border-2"
+                            style={{ background: '#FFFBEB', borderColor: '#FDE68A', color: '#92400E' }}>
+                            <AlertTriangle size={13} className="shrink-0" />
+                            <span>No UPI ID configured. Go to Payment Methods.</span>
                           </div>
                         );
                       })()}
                     </>
                   )}
 
-                {/* Split custom / digital methods */}
-                {payMethod &&
-                  !['CASH', 'UPI'].includes(
-                    String(payMethod)
-                      .trim()
-                      .toUpperCase()
-                  ) && (
-                    <div className="space-y-1.5">
-                      <label
-                        className="block text-[10px] font-black uppercase tracking-wide text-slate-400"
-                        style={{
-                          fontFamily: FONT_H,
-                        }}
-                      >
-                        Transaction Reference
-                        (optional)
+                  {/* OTHER / CUSTOM PAYMENT METHODS */}
+                  {(!putRemainingOnCredit || parsedPayAmount > 0) &&
+                    payMethod &&
+                    !['CASH', 'UPI'].includes(String(payMethod).trim().toUpperCase()) && (
+                    <div className="rounded-xl p-3 border-2" style={{ background: WHITE, borderColor: BORDER }}>
+                      <label className="block text-xs font-black uppercase tracking-wide mb-2" style={{ color: MUTED, fontFamily: FONT_H }}>
+                        Transaction Reference (optional)
                       </label>
-
                       <input
                         value={cardRef}
-                        onChange={e =>
-                          setCardRef(
-                            e.target.value
-                          )
-                        }
+                        onChange={e => setCardRef(e.target.value)}
                         placeholder="e.g. TXN-1234567"
-                        className="w-full rounded-xl px-3 py-2 text-sm focus:outline-none border-2 transition bg-slate-50 border-slate-200 font-mono"
+                        className="w-full rounded-xl px-3 py-2.5 focus:outline-none border-2 transition font-mono"
+                        style={{ background: '#F8FAFC', borderColor: BORDER, color: FG }}
+                        onFocus={e => {
+                          e.target.style.borderColor = ACCENT;
+                          e.target.style.boxShadow = `4px 4px 0px 0px ${ACCENT}`;
+                        }}
+                        onBlur={e => {
+                          e.target.style.borderColor = BORDER;
+                          e.target.style.boxShadow = 'none';
+                        }}
                       />
                     </div>
                   )}
+                </>
+              ) : (
+                <>
+                  {/* SPLIT BILL — UNCHANGED */}
+                  <div className="flex gap-2 p-1 bg-slate-100 border-2 border-slate-800 rounded-xl mb-3">
+                    <button
+                      type="button"
+                      onClick={() => { setSplitMode('equal'); setPaidSplits([]); setActiveSplitIdx(null); }}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-black transition ${splitMode === 'equal' ? 'bg-slate-800 text-white' : 'text-slate-600 hover:text-slate-800'}`}
+                      style={{ fontFamily: FONT_H }}
+                    >
+                      Equal Parts
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setSplitMode('item'); setPaidSplits([]); setActiveSplitIdx(null); }}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-black transition ${splitMode === 'item' ? 'bg-slate-800 text-white' : 'text-slate-600 hover:text-slate-800'}`}
+                      style={{ fontFamily: FONT_H }}
+                    >
+                      Split by Items
+                    </button>
+                  </div>
 
-                {/* Split payment buttons */}
-                <div className="flex gap-3 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveSplitIdx(null);
-                      setPayMethod(null);
-                      setCashReceived('');
-                      setCardRef('');
-                    }}
-                    className="flex-1 py-2 bg-white hover:bg-slate-50 text-slate-800 border-2 border-slate-800 rounded-xl font-bold transition text-xs shadow-pop-sm"
-                  >
-                    Cancel
-                  </button>
+                  {splitMode === 'equal' ? (
+                    <div className="flex items-center justify-between p-3 bg-white border-2 border-slate-850 rounded-2xl mb-4" style={{ boxShadow: 'var(--pop-shadow-sm)' }}>
+                      <span className="text-xs font-bold text-slate-700">Number of Guests</span>
+                      <div className="flex items-center gap-2">
+                        <button type="button" onClick={() => { setEqualCount(c => Math.max(2, c - 1)); setPaidSplits([]); setActiveSplitIdx(null); }}
+                          className="w-8 h-8 rounded-lg border-2 border-slate-800 flex items-center justify-center font-black">-</button>
+                        <span className="w-8 text-center font-black text-sm">{equalCount}</span>
+                        <button type="button" onClick={() => { setEqualCount(c => Math.min(10, c + 1)); setPaidSplits([]); setActiveSplitIdx(null); }}
+                          className="w-8 h-8 rounded-lg border-2 border-slate-800 bg-slate-800 text-white flex items-center justify-center font-black">+</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 mb-4">
+                      <div className="text-xs font-bold text-slate-500 mb-1">Assign Items to Guests:</div>
+                      {cartItems.map((item, itemIdx) => {
+                        const guestIdx = getAssignedGuest(itemIdx);
+                        return (
+                          <div key={itemIdx} className="flex items-center justify-between p-2.5 bg-white border-2 border-slate-200 rounded-xl text-xs" style={{ boxShadow: 'var(--pop-shadow-sm)' }}>
+                            <div className="truncate pr-2 font-medium text-slate-800 flex flex-col">
+                              <span>{item.name} <span className="text-slate-400">× {item.quantity}</span></span>
+                            </div>
+                            <select
+                              value={guestIdx}
+                              onChange={e => { setItemAssignments(prev => ({ ...prev, [itemIdx]: parseInt(e.target.value) })); setPaidSplits([]); setActiveSplitIdx(null); }}
+                              className="bg-slate-50 border-2 border-slate-300 rounded-lg px-2 py-1 focus:outline-none focus:border-slate-800 font-semibold text-slate-700"
+                            >
+                              {Array.from({ length: numGuests }).map((_, g) => (
+                                <option key={g} value={g}>{getGuestName(g)}</option>
+                              ))}
+                            </select>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
 
-                  <button
-                    type="button"
-                    disabled={!payMethod}
-                    onClick={() => {
-                      const methodName =
-                        String(
-                          payMethod || ''
-                        ).trim();
-
-                      const methodKey =
-                        methodName.toUpperCase();
-
-                      const splitAmount =
-                        splitMode === 'equal'
-                          ? getEqualSplits()[
-                              activeSplitIdx
-                            ].amount
-                          : getItemSplits()[
-                              activeSplitIdx
-                            ].total;
-
-                      let paymentReference = '';
-
-                      if (methodKey === 'CASH') {
-                        const received =
-                          cashReceived
-                            ? parseFloat(
-                                cashReceived
-                              )
-                            : 0;
-
-                        const change =
-                          Math.max(
-                            0,
-                            received -
-                              splitAmount
-                          );
-
-                        paymentReference = `Cash Change: ${change.toFixed(
-                          2
-                        )}`;
-                      } else if (
-                        methodKey === 'UPI'
-                      ) {
-                        paymentReference =
-                          'UPI Scan';
-                      } else {
-                        paymentReference =
-                          cardRef?.trim() || '';
-                      }
-
-                      confirmSplitPayment(
-                        methodName,
-                        paymentReference
+                  <div className="space-y-2.5">
+                    {(splitMode === 'equal' ? getEqualSplits() : getItemSplits()).map(part => {
+                      const amt = splitMode === 'equal' ? part.amount : part.total;
+                      if (amt === 0) return null;
+                      return (
+                        <div key={part.index} className="border-2 border-slate-800 rounded-2xl p-3 bg-white flex items-center justify-between" style={{ boxShadow: 'var(--pop-shadow-sm)' }}>
+                          <div>
+                            <div className="text-xs font-black uppercase tracking-wider text-slate-400" style={{ fontFamily: FONT_H }}>
+                              {splitMode === 'equal' ? `Guest ${part.index + 1}` : part.name}
+                            </div>
+                            <div className="text-lg font-black text-slate-800 mt-0.5">{fmt(amt)}</div>
+                          </div>
+                          <div>
+                            {part.paid ? (
+                              <div className="flex items-center gap-2">
+                                <span className="px-2.5 py-1 bg-[#D1FAE5] text-emerald-800 border-2 border-emerald-300 rounded-lg text-[10px] font-black uppercase flex items-center gap-1">
+                                  <Check size={11} strokeWidth={3} /> {part.method}
+                                </span>
+                                <button type="button" onClick={() => resetSplitPayment(part.index)}
+                                  className="w-7 h-7 flex items-center justify-center rounded-lg border-2 border-slate-200 text-rose-500 hover:border-slate-800 transition">
+                                  <X size={13} strokeWidth={2.5} />
+                                </button>
+                              </div>
+                            ) : (
+                              <button type="button" onClick={() => { setActiveSplitIdx(part.index); setPayMethod(null); setCashReceived(''); setCardRef(''); }}
+                                className="px-3 py-1.5 bg-violet-600 text-white border-2 border-slate-800 rounded-xl text-xs font-black hover:bg-violet-700 transition"
+                                style={{ boxShadow: '2px 2px 0px 0px #1E293B', fontFamily: FONT_H }}>
+                                Pay Share
+                              </button>
+                            )}
+                          </div>
+                        </div>
                       );
+                    })}
+                  </div>
 
-                      setPayMethod(null);
-                      setCashReceived('');
-                      setCardRef('');
-                    }}
-                    className="flex-1 py-2 bg-violet-600 text-white border-2 border-slate-800 rounded-xl font-black transition text-xs shadow-pop-sm disabled:opacity-50"
-                  >
-                    Confirm Pay
-                  </button>
-                </div>
-              </div>
+                  {/* ACTIVE SPLIT PAYMENT MODAL */}
+                  {activeSplitIdx !== null && (
+                    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-55 flex items-center justify-center p-4">
+                      <div className="bg-white border-2 border-slate-800 rounded-2xl w-full max-w-sm p-5 space-y-4" style={{ boxShadow: 'var(--pop-shadow-lg)' }}>
+                        <div className="flex justify-between items-center pb-2 border-b-2">
+                          <div>
+                            <div className="text-[10px] font-black uppercase tracking-wider text-slate-400" style={{ fontFamily: FONT_H }}>
+                              Collect Share Payment
+                            </div>
+                            <div className="text-base font-black text-slate-850" style={{ fontFamily: FONT_H }}>
+                              {splitMode === 'equal' ? `Guest ${activeSplitIdx + 1}` : getGuestName(activeSplitIdx)}
+                            </div>
+                          </div>
+                          <div className="text-xl font-black text-violet-600">
+                            {fmt(splitMode === 'equal' ? getEqualSplits()[activeSplitIdx].amount : getItemSplits()[activeSplitIdx].total)}
+                          </div>
+                        </div>
+
+                        <div className="text-xs font-black uppercase tracking-wider text-slate-500 mb-1" style={{ fontFamily: FONT_H }}>
+                          Select Method
+                        </div>
+
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                          {loadingPaymentMethods ? (
+                            <div className="col-span-full text-center py-3 text-xs font-bold text-slate-400">Loading payment methods...</div>
+                          ) : paymentMethods.length === 0 ? (
+                            <div className="col-span-full text-center py-3 text-xs font-bold text-red-500">No payment methods are enabled</div>
+                          ) : (
+                            paymentMethods.map(method => {
+                              const methodName = String(method.name || '').trim();
+                              const isSelected = payMethod === methodName;
+                              return (
+                                <button
+                                  key={method.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setPayMethod(methodName);
+                                    const methodKey = methodName.toUpperCase();
+                                    if (methodKey !== 'CASH') setCashReceived('');
+                                    if (methodKey === 'CASH') setCardRef('');
+                                  }}
+                                  className={`py-2 px-2 rounded-xl text-xs font-black border-2 transition truncate ${isSelected ? 'bg-violet-600 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200'}`}
+                                  style={{ boxShadow: isSelected ? 'var(--pop-shadow-sm)' : 'none', fontFamily: FONT_H }}
+                                  title={methodName}
+                                >
+                                  {methodName}
+                                </button>
+                              );
+                            })
+                          )}
+                        </div>
+
+                        {payMethod && String(payMethod).trim().toUpperCase() === 'CASH' && (
+                          <div className="space-y-1.5">
+                            <label className="block text-[10px] font-black uppercase tracking-wide text-slate-400" style={{ fontFamily: FONT_H }}>
+                              Cash Received (ETB)
+                            </label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={cashReceived}
+                              placeholder={(splitMode === 'equal' ? getEqualSplits()[activeSplitIdx].amount : getItemSplits()[activeSplitIdx].total).toFixed(2)}
+                              onChange={e => setCashReceived(e.target.value)}
+                              className="w-full rounded-xl px-3 py-2 text-sm font-bold focus:outline-none border-2 transition bg-slate-50 border-slate-200 font-mono"
+                            />
+                            {cashReceived && (
+                              <div className="flex justify-between text-xs font-bold text-emerald-600 bg-[#D1FAE5] px-2.5 py-1.5 rounded-lg border-2 border-emerald-350">
+                                <span>Change to Return</span>
+                                <span>{fmt(Math.max(0, parseFloat(cashReceived) - (splitMode === 'equal' ? getEqualSplits()[activeSplitIdx].amount : getItemSplits()[activeSplitIdx].total)))}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {payMethod && !['CASH', 'UPI'].includes(String(payMethod).trim().toUpperCase()) && (
+                          <div className="space-y-1.5">
+                            <label className="block text-[10px] font-black uppercase tracking-wide text-slate-400" style={{ fontFamily: FONT_H }}>
+                              Transaction Reference (optional)
+                            </label>
+                            <input
+                              value={cardRef}
+                              onChange={e => setCardRef(e.target.value)}
+                              placeholder="e.g. TXN-1234567"
+                              className="w-full rounded-xl px-3 py-2 text-sm focus:outline-none border-2 transition bg-slate-50 border-slate-200 font-mono"
+                            />
+                          </div>
+                        )}
+
+                        <div className="flex gap-3 pt-1">
+                          <button type="button" onClick={() => { setActiveSplitIdx(null); setPayMethod(null); setCashReceived(''); setCardRef(''); }}
+                            className="flex-1 py-2 bg-white hover:bg-slate-50 text-slate-800 border-2 border-slate-800 rounded-xl font-bold transition text-xs shadow-pop-sm">
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!payMethod}
+                            onClick={() => {
+                              const methodName = String(payMethod || '').trim();
+                              const methodKey = methodName.toUpperCase();
+                              const splitAmount = splitMode === 'equal' ? getEqualSplits()[activeSplitIdx].amount : getItemSplits()[activeSplitIdx].total;
+                              let paymentReference = '';
+                              if (methodKey === 'CASH') {
+                                const received = cashReceived ? parseFloat(cashReceived) : 0;
+                                const change = Math.max(0, received - splitAmount);
+                                paymentReference = `Cash Change: ${change.toFixed(2)}`;
+                              } else if (methodKey === 'UPI') {
+                                paymentReference = 'UPI Scan';
+                              } else {
+                                paymentReference = cardRef?.trim() || '';
+                              }
+                              confirmSplitPayment(methodName, paymentReference);
+                              setPayMethod(null);
+                              setCashReceived('');
+                              setCardRef('');
+                            }}
+                            className="flex-1 py-2 bg-violet-600 text-white border-2 border-slate-800 rounded-xl font-black transition text-xs shadow-pop-sm disabled:opacity-50">
+                            Confirm Pay
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
-          )}
-        </>
-      )}
-    </div>
 
-    {/* ═══════════════════════════════════════════
-        CHECKOUT ACTION BUTTON
-    ═══════════════════════════════════════════ */}
-    <div className="px-4 pb-4 shrink-0">
-      {isSplit ? (
-        <button
-          onClick={handlePay}
-          disabled={
-            payLoading ||
-            !isSplitFullyPaid()
-          }
-          className="w-full h-14 rounded-xl font-black text-base transition-all duration-200 disabled:opacity-40 flex items-center justify-center gap-2 border-2"
-          style={{
-            background: ACCENT,
-            color: '#fff',
-            borderColor: FG,
-            boxShadow: `4px 4px 0px 0px ${FG}`,
-            fontFamily: FONT_H,
-          }}
-        >
-          {payLoading ? (
-            <>
-              <Loader2
-                size={18}
-                className="animate-spin"
-              />
-
-              <span>Processing…</span>
-            </>
-          ) : (
-            <>
-              <CheckCircle2
-                size={18}
-                strokeWidth={2.5}
-              />
-
-              <span>
-                Complete Split Payment · {fmt(total)}
-              </span>
-            </>
-          )}
-        </button>
-      ) : (
-        <button
-          onClick={handlePay}
-          disabled={
-            payLoading || !payMethod
-          }
-          className="w-full h-14 rounded-xl font-black text-base transition-all duration-200 disabled:opacity-40 flex items-center justify-center gap-2 border-2"
-          style={{
-            background: ACCENT,
-            color: '#fff',
-            borderColor: FG,
-            boxShadow: `4px 4px 0px 0px ${FG}`,
-            fontFamily: FONT_H,
-          }}
-        >
-          {payLoading ? (
-            <>
-              <Loader2
-                size={18}
-                className="animate-spin"
-              />
-
-              <span>Processing…</span>
-            </>
-          ) : (
-            <>
-              <CheckCircle2
-                size={18}
-                strokeWidth={2.5}
-              />
-
-              <span>
-                Complete Payment · {fmt(total)}
-              </span>
-            </>
-          )}
-        </button>
-      )}
-    </div>
-  </div>
-)}
+            {/* CHECKOUT ACTION BUTTON */}
+            <div className="px-4 pb-4 pt-3 shrink-0" style={{ borderTop: `2px solid ${BORDER}`, background: WHITE }}>
+              {isSplit ? (
+                <button
+                  onClick={handlePay}
+                  disabled={payLoading || !isSplitFullyPaid()}
+                  className="w-full h-14 rounded-xl font-black text-base transition-all duration-200 disabled:opacity-40 flex items-center justify-center gap-2 border-2"
+                  style={{ background: ACCENT, color: '#fff', borderColor: FG, boxShadow: `4px 4px 0px 0px ${FG}`, fontFamily: FONT_H }}
+                >
+                  {payLoading ? (
+                    <>
+                      <Loader2 size={18} className="animate-spin" />
+                      <span>Processing…</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 size={18} strokeWidth={2.5} />
+                      <span>Complete Split Payment · {fmt(total)}</span>
+                    </>
+                  )}
+                </button>
+              ) : putRemainingOnCredit ? (
+                <button
+                  onClick={handlePay}
+                  disabled={payLoading || customers.length !== 1}
+                  className="w-full h-14 rounded-xl font-black text-base transition-all duration-200 disabled:opacity-40 flex items-center justify-center gap-2 border-2"
+                  style={{ background: '#F59E0B', color: '#fff', borderColor: FG, boxShadow: `4px 4px 0px 0px ${FG}`, fontFamily: FONT_H }}
+                >
+                  {payLoading ? (
+                    <>
+                      <Loader2 size={18} className="animate-spin" />
+                      <span>Processing…</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 size={18} strokeWidth={2.5} />
+                      <span>
+                        {isFullCredit
+                          ? `Put Full Bill on Credit · ${fmt(creditAmount)}`
+                          : `Pay ${fmt(parsedPayAmount)} + Credit ${fmt(creditAmount)}`}
+                      </span>
+                    </>
+                  )}
+                </button>
+              ) : (
+                <button
+                  onClick={handlePay}
+                  disabled={payLoading || !payMethod}
+                  className="w-full h-14 rounded-xl font-black text-base transition-all duration-200 disabled:opacity-40 flex items-center justify-center gap-2 border-2"
+                  style={{ background: ACCENT, color: '#fff', borderColor: FG, boxShadow: `4px 4px 0px 0px ${FG}`, fontFamily: FONT_H }}
+                >
+                  {payLoading ? (
+                    <>
+                      <Loader2 size={18} className="animate-spin" />
+                      <span>Processing…</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 size={18} strokeWidth={2.5} />
+                      <span>Complete Payment · {fmt(total)}</span>
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Modals ── */}
-      {/* {showCoupon && <CouponModal onApply={setCoupon} onClose={() => setShowCoupon(false)} />} */}
       {showCustomer && (
         <CustomerModal
           onAssign={(c) => {
