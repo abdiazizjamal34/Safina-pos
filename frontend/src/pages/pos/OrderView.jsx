@@ -980,7 +980,9 @@ useEffect(() => {
             />
           ),
         });
-
+         setTimeout(() => {
+  window.location.reload();
+}, 1000);
         return;
       }
 
@@ -999,6 +1001,9 @@ useEffect(() => {
         onOrderUpdate?.(updatedOrder);
 
         toast.success('Kitchen order updated');
+        setTimeout(() => {
+  window.location.reload();
+}, 1000);
 
         return;
       }
