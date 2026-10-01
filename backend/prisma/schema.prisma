@@ -31,8 +31,6 @@ enum PromotionTarget {
   ORDER
 }
 
-
-
 enum SessionStatus {
   OPEN
   CLOSED
@@ -70,6 +68,18 @@ enum KdsStation {
 }
 
 // ============================================================
+// LOAN / CUSTOMER CREDIT ENUMS
+// ============================================================
+
+enum LoanStatus {
+  PENDING
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+// ============================================================
 // ORGANIZATION
 // ============================================================
 
@@ -91,6 +101,10 @@ model Organization {
   sessions       PosSession[]
   orders         Order[]
   customers      Customer[]
+
+  // Customer credit / loans
+  loans        Loan[]
+  loanPayments LoanPayment[]
 }
 
 // ============================================================
@@ -98,10 +112,11 @@ model Organization {
 // ============================================================
 
 model User {
-  id       String @id @default(uuid())
+  id       String  @id @default(uuid())
   name     String
-  email    String @unique
+  email    String  @unique
   password String
+  pin      String?
 
   role Role @default(WAITER)
 
@@ -154,8 +169,9 @@ model ProductCategory {
 model Product {
   id String @id @default(uuid())
 
-  name String
+  name     String
   imageUrl String?
+
   categoryId String
 
   price Decimal @db.Decimal(10, 2)
@@ -208,7 +224,11 @@ model PaymentMethod {
 
   organization Organization @relation(fields: [organizationId], references: [id])
 
+  // Normal order payments
   payments Payment[]
+
+  // Customer loan repayments
+  loanPayments LoanPayment[]
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -380,12 +400,16 @@ model Customer {
 
   createdAt DateTime @default(now())
 
-  // Important for multi-restaurant / multi-tenant isolation
+  // Multi-restaurant / multi-tenant isolation
   organizationId String
 
   organization Organization @relation(fields: [organizationId], references: [id])
 
+  // Customer's orders
   orders Order[]
+
+  // Customer's credit / loans
+  loans Loan[]
 
   @@index([organizationId])
   @@index([organizationId, phone])
@@ -409,12 +433,13 @@ model Order {
 
   orderType OrderType @default(TABLE)
 
- deliveryLocation String?
+  deliveryLocation String?
 
- customerNameSnapshot String?
- customerPhoneSnapshot String?
+  customerNameSnapshot String?
 
- customerNotes String?
+  customerPhoneSnapshot String?
+
+  customerNotes String?
 
   subtotal Decimal @default(0) @db.Decimal(10, 2)
 
@@ -462,7 +487,12 @@ model Order {
   // and one Bar ticket.
   kdsTickets KdsTicket[]
 
+  // Normal payments made for this order
   payments Payment[]
+
+  // If this order was purchased on credit,
+  // it can have one associated loan.
+  loan Loan?
 
   @@unique([organizationId, orderNumber])
   @@index([organizationId])
@@ -494,6 +524,129 @@ model Payment {
   paymentMethod PaymentMethod @relation(fields: [paymentMethodId], references: [id])
 
   @@index([orderId])
+  @@index([paymentMethodId])
+}
+
+// ============================================================
+// CUSTOMER LOANS / CREDIT
+// ============================================================
+//
+// Each credit order creates its own Loan.
+//
+// Example:
+//
+// Customer Ahmed
+//   ├── Order #1001 → Loan $100
+//   ├── Order #1002 → Loan $50
+//   └── Order #1003 → Loan $80
+//
+// Ahmed's total outstanding = $230
+//
+// Each loan can have multiple LoanPayment records.
+//
+
+model Loan {
+  id String @id @default(uuid())
+
+  // Customer who owes the money
+  customerId String
+
+  // Original order that created the credit
+  orderId String
+
+  // Original credit amount
+  originalAmount Decimal @db.Decimal(10, 2)
+
+  // Total amount paid against this loan
+  paidAmount Decimal @default(0) @db.Decimal(10, 2)
+
+  // Current outstanding balance
+  remainingAmount Decimal @db.Decimal(10, 2)
+
+  // Optional payment deadline
+  dueDate DateTime?
+
+  status LoanStatus @default(PENDING)
+
+  notes String?
+
+  createdAt DateTime @default(now())
+
+  updatedAt DateTime @updatedAt
+
+  organizationId String
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  customer Customer @relation(fields: [customerId], references: [id])
+
+  order Order @relation(fields: [orderId], references: [id])
+
+  // Payments made against this particular loan
+  payments LoanPayment[]
+
+  @@unique([orderId])
+  @@index([organizationId])
+  @@index([organizationId, customerId])
+  @@index([organizationId, status])
+  @@index([customerId])
+  @@index([orderId])
+}
+
+// ============================================================
+// LOAN PAYMENTS
+// ============================================================
+//
+// This is different from Payment.
+//
+// Payment:
+//     Money paid for an order at checkout.
+//
+// LoanPayment:
+//     Money paid later to reduce a customer's credit balance.
+//
+// Example:
+//
+// Loan #1 = $100
+//
+// Payment 1 = $30
+// Payment 2 = $20
+// Payment 3 = $50
+//
+// Loan becomes PAID.
+//
+
+model LoanPayment {
+  id String @id @default(uuid())
+
+  loanId String
+
+  // Organization is stored directly for
+  // multi-tenant isolation and reporting.
+  organizationId String
+
+  // Amount paid in this transaction
+  amount Decimal @db.Decimal(10, 2)
+
+  // How the customer paid
+  paymentMethodId String
+
+  // Optional external transaction/reference number
+  paymentReference String?
+
+  notes String?
+
+  createdAt DateTime @default(now())
+
+  loan Loan @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  paymentMethod PaymentMethod @relation(fields: [paymentMethodId], references: [id])
+
+  @@index([loanId])
+  @@index([organizationId])
+  @@index([organizationId, loanId])
   @@index([paymentMethodId])
 }
 
