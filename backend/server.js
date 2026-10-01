@@ -14,7 +14,7 @@ const app = express();
 const server = http.createServer(app);
 const frontendUrl = (process.env.FRONTEND_URL || '').replace(/\/$/, '');
 const io = new Server(server, {
-  cors: { origin: frontendUrl, credentials: true }
+  cors: { origin: true, credentials: true }
 });
 
 io.use(async (socket, next) => {
@@ -47,7 +47,7 @@ app.use(
   })
 );
 app.set('trust proxy', 1); // Trust Render's reverse proxy for correct IP detection
-app.use(cors({ origin: frontendUrl, credentials: true }));
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use(cookieParser());
 app.use('/uploads', express.static('uploads'));
