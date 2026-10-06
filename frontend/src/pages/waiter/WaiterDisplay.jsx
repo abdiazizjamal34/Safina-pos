@@ -1,27 +1,58 @@
+
+
+
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import {
   Bell, BellOff, CheckCircle2, ChefHat, Volume2, VolumeX,
-  Loader2, X, AlertTriangle, Maximize2, User,
+  Loader2, X, AlertTriangle, Maximize2, User, Settings,
 } from 'lucide-react';
 
-const SOCKET_URL = (
+import {
+  initNotifications,
+  fireWaiterCall,
+  clearWaiterNotifications,
+  listenForNotificationTaps,
+   startForegroundService,
+  ringWaiterBell
+} from '../../services/notificationService';
+import { KeepAwake } from '@capacitor-community/keep-awake';
+import { Capacitor } from '@capacitor/core';
+
+import { loadConfig } from '../../services/configService';
+import WaiterSetup from './WaiterSetup';
+
+/* Fallback socket URL for web mode (when no config is stored) */
+const DEFAULT_SOCKET_URL = (
   import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
 ).replace(/\/api\/?$/, '');
 
-/* ─────────────────────────────────────────────
-   A tiny base64 "bell" chime as data URL
-   (~3s, looping-friendly)
-───────────────────────────────────────────── */
+/* Tiny base64 "bell" chime as data URL */
 const BELL_DATA_URL =
   'data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
 
 export default function WaiterDisplay() {
   const [params] = useSearchParams();
-  const org = params.get('org');
-  const secret = params.get('k');
 
+  /* ── Config ──────────────────────────────────── */
+  const [config, setConfig] = useState(() => loadConfig());
+  const [showSettings, setShowSettings] = useState(false);
+
+  /* URL params take priority (for web), fall back to saved config (for native) */
+  const orgFromUrl = params.get('org');
+  const secretFromUrl = params.get('k');
+  const serverFromConfig = config.serverUrl;
+
+  const org = orgFromUrl || config.orgId;
+  const secret = secretFromUrl || config.secret;
+
+  /* Resolve socket URL — prefer config's server URL when present */
+  const SOCKET_URL = serverFromConfig
+    ? serverFromConfig.replace(/\/$/, '')
+    : DEFAULT_SOCKET_URL;
+
+  /* ── UI state ────────────────────────────────── */
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState('');
   const [calls, setCalls] = useState([]);
@@ -31,13 +62,14 @@ export default function WaiterDisplay() {
     () => localStorage.getItem('waiter_ack_name') || ''
   );
   const [promptFor, setPromptFor] = useState(null);
+  const [titleFlash, setTitleFlash] = useState(false);
 
+  /* ── Refs ────────────────────────────────────── */
   const socketRef = useRef(null);
   const audioRef = useRef(null);
   const loopRef = useRef(null);
   const ringTimerRef = useRef(null);
   const wakeLockRef = useRef(null);
-  const [titleFlash, setTitleFlash] = useState(false);
 
   /* ── Title flash + favicon when calls pending ── */
   useEffect(() => {
@@ -60,7 +92,7 @@ export default function WaiterDisplay() {
       : 'Waiter Display';
   }, [titleFlash, calls.length]);
 
-  /* ── Wake lock (keeps screen on) ── */
+  /* ── Wake lock (browser fallback) ── */
   useEffect(() => {
     const acquire = async () => {
       try {
@@ -83,12 +115,121 @@ export default function WaiterDisplay() {
     };
   }, []);
 
+  /* ── Bell loop ── */
+  const RING_INTERVAL_MS = 10000;//  this is the interval for the bell to ring in milliseconds (10 seconds)
+
+  // const playBellOnce = () => {
+  //   try {
+  //     if (!audioRef.current) {
+  //       audioRef.current = new Audio('/notify.mp3');
+  //       audioRef.current.preload = 'auto';
+  //       audioRef.current.volume = 1.0;
+  //     }
+  //     audioRef.current.currentTime = 0;
+  //     audioRef.current.play().catch((e) => {
+  //       console.warn('Bell blocked:', e);
+  //     });
+  //   } catch (e) {
+  //     console.warn('Bell error:', e);
+  //   }
+  // };
+
+  // const startBellLoop = () => {
+  //   if (soundMuted) return;
+  //   if (ringTimerRef.current) return;
+
+  //   playBellOnce();
+
+  //   ringTimerRef.current = setInterval(() => {
+  //     playBellOnce();
+  //   }, RING_INTERVAL_MS);
+
+  //   loopRef.current = true;
+  // };
+
+  // const stopBellLoop = () => {
+  //   if (ringTimerRef.current) {
+  //     clearInterval(ringTimerRef.current);
+  //     ringTimerRef.current = null;
+  //   }
+  //   if (audioRef.current) {
+  //     audioRef.current.pause();
+  //     audioRef.current.currentTime = 0;
+  //   }
+  //   loopRef.current = false;
+  // };
+
+/** Play the JS audio bell (works when app is in foreground) */
+const playBellOnce = () => {
+  try {
+    if (!audioRef.current) {
+      audioRef.current = new Audio('/notify.mp3');
+      audioRef.current.preload = 'auto';
+      audioRef.current.volume = 1.0;
+    }
+    audioRef.current.currentTime = 0;
+    audioRef.current.play().catch((e) => {
+      console.warn('Bell blocked:', e);
+    });
+  } catch (e) {
+    console.warn('Bell error:', e);
+  }
+};
+
+/** Ring every second: JS audio in foreground, native notification always */
+const startBellLoop = () => {
+  if (ringTimerRef.current) return; // already running
+
+  // Immediate ring
+  playBellOnce();
+  // Also fire a native ring so it works if we're already backgrounded
+  if (isNative) {
+    calls.forEach((c) => {
+      ringWaiterBell(c).catch(() => {});
+    });
+  }
+
+  ringTimerRef.current = setInterval(() => {
+    // Only play the WebView bell if we're in the foreground.
+    // In the background, WebView audio is suspended anyway.
+    if (!document.hidden && !soundMuted) {
+      playBellOnce();
+    }
+
+    // Always re-fire the native notification — this is what
+    // keeps the bell ringing in the background.
+    if (isNative) {
+      calls.forEach((c) => {
+        ringWaiterBell(c).catch(() => {});
+      });
+    }
+  }, RING_INTERVAL_MS);
+
+  loopRef.current = true;
+};
+
+const stopBellLoop = () => {
+  if (ringTimerRef.current) {
+    clearInterval(ringTimerRef.current);
+    ringTimerRef.current = null;
+  }
+  if (audioRef.current) {
+    audioRef.current.pause();
+    audioRef.current.currentTime = 0;
+  }
+  loopRef.current = false;
+};
+
+
+  /* Stop loop when no calls */
+  useEffect(() => {
+    if (calls.length === 0) stopBellLoop();
+  }, [calls.length]);
+
   /* ── Socket connect ── */
   useEffect(() => {
-    if (!org || !secret) {
-      setError('Missing organization or secret in URL');
-      return;
-    }
+    // Not configured yet → don't try to connect
+    if (!org || !secret) return;
 
     const socket = io(`${SOCKET_URL}/waiter`, {
       transports: ['websocket', 'polling'],
@@ -114,77 +255,97 @@ export default function WaiterDisplay() {
       setConnected(false);
     });
 
-    socket.on('waiter-call', (call) => {
-      setCalls((prev) => {
-        // dedupe
-        if (prev.some((c) => c.orderId === call.orderId)) return prev;
-        return [...prev, call];
-      });
-      startBellLoop();
-    });
+    // socket.on('waiter-call', async (call) => {
+    //   setCalls((prev) => {
+    //     if (prev.some((c) => c.orderId === call.orderId)) return prev;
+    //     return [...prev, call];
+    //   });
+    //   startBellLoop();
+    //   await fireWaiterCall(call);
+    // });
+
+
+    socket.on('waiter-call', async (call) => {
+  setCalls((prev) => {
+    if (prev.some((c) => c.orderId === call.orderId)) return prev;
+    return [...prev, call];
+  });
+  startBellLoop();
+  await fireWaiterCall(call);
+  // Kick off native ring immediately (in case we're backgrounded)
+  if (isNative) {
+    ringWaiterBell(call).catch(() => {});
+  }
+});
 
     socket.on('waiter-ack', ({ orderId }) => {
-      setCalls((prev) => prev.filter((c) => c.orderId !== orderId));
+      setCalls((prev) => {
+        const next = prev.filter((c) => c.orderId !== orderId);
+        if (next.length === 0) {
+          clearWaiterNotifications();
+        }
+        return next;
+      });
     });
 
     return () => {
       socket.disconnect();
       stopBellLoop();
     };
-  }, [org, secret]);
+  }, [org, secret, SOCKET_URL]);
 
-/* ── Bell loop ── */
-/* ── Bell loop — plays once every RING_INTERVAL_MS ── */
-const RING_INTERVAL_MS = 50000;   // 👈 change this to your preferred gap (ms)
+  /* ── Notification channel + wake lock (native only) ── */
+  const isNative = Capacitor.isNativePlatform();
 
+  // useEffect(() => {
+  //   if (!isNative) return;
 
-const playBellOnce = () => {
-  try {
-    if (!audioRef.current) {
-      audioRef.current = new Audio('/notify.mp3');
-      audioRef.current.preload = 'auto';
-      audioRef.current.volume = 1.0;
-    }
-    audioRef.current.currentTime = 0;
-    audioRef.current.play().catch((e) => {
-      console.warn('Bell blocked:', e);
-    });
-  } catch (e) {
-    console.warn('Bell error:', e);
-  }
-};
+  //   (async () => {
+  //     await initNotifications();
+  //     try {
+  //       await KeepAwake.keepAwake();
+  //     } catch {}
+  //   })();
 
-const startBellLoop = () => {
-  if (soundMuted) return;
-  if (ringTimerRef.current) return; // already running
+  //   return () => {
+  //     if (isNative) {
+  //       KeepAwake.allowSleep().catch(() => {});
+  //     }
+  //   };
+  // }, [isNative]);
 
-  // Play immediately on first call
-  playBellOnce();
-
-  // Then keep re-ringing every RING_INTERVAL_MS
-  ringTimerRef.current = setInterval(() => {
-    playBellOnce();
-  }, RING_INTERVAL_MS);
-
-  loopRef.current = true;
-};
-
-const stopBellLoop = () => {
-  if (ringTimerRef.current) {
-    clearInterval(ringTimerRef.current);
-    ringTimerRef.current = null;
-  }
-  if (audioRef.current) {
-    audioRef.current.pause();
-    audioRef.current.currentTime = 0;
-  }
-  loopRef.current = false;
-};
-
-  /* Stop loop when no calls */
   useEffect(() => {
-    if (calls.length === 0) stopBellLoop();
-  }, [calls.length]);
+  if (!isNative) return;
+
+  (async () => {
+    await initNotifications();
+    await startForegroundService();   // 👈 NEW
+    try {
+      await KeepAwake.keepAwake();
+    } catch {}
+  })();
+
+  return () => {
+    if (isNative) {
+      KeepAwake.allowSleep().catch(() => {});
+      // Do NOT stop the foreground service on unmount —
+      // we want it to keep running while the app is open.
+    }
+  };
+}, [isNative]);
+
+  /* ── Notification tap handler ── */
+  useEffect(() => {
+    let cleanup = () => {};
+
+    (async () => {
+      cleanup = await listenForNotificationTaps((orderId) => {
+        console.log('[notifications] tapped for order', orderId);
+      });
+    })();
+
+    return () => cleanup();
+  }, []);
 
   /* ── First-click "enable sound" ── */
   const enableSound = async () => {
@@ -197,7 +358,7 @@ const stopBellLoop = () => {
       localStorage.setItem('waiter_sound_ready', 'true');
     } catch (e) {
       console.warn('Cannot enable sound', e);
-      setSoundReady(true); // still mark ready so user isn't stuck
+      setSoundReady(true);
     }
   };
 
@@ -234,7 +395,35 @@ const stopBellLoop = () => {
     }
   };
 
-  /* ── UI ── */
+  /* ── Reload config after user saves settings ── */
+  const handleSettingsSaved = () => {
+    setConfig(loadConfig());
+    setShowSettings(false);
+    // Socket useEffect will reconnect automatically because
+    // org / secret / SOCKET_URL dependencies change.
+  };
+
+  /* ═════════════════════════════════════════════
+     RENDER
+  ═════════════════════════════════════════════ */
+
+  /* 1. If user opened the settings screen */
+  if (showSettings) {
+    return (
+      <WaiterSetup
+        allowCancel
+        onCancel={() => setShowSettings(false)}
+        onSaved={handleSettingsSaved}
+      />
+    );
+  }
+
+  /* 2. If not configured yet → show setup screen */
+  if (!org || !secret) {
+    return <WaiterSetup onSaved={handleSettingsSaved} />;
+  }
+
+  /* 3. Offline error screen */
   if (error && !connected) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#FFFDF5] p-6 text-center font-jakarta">
@@ -247,13 +436,21 @@ const stopBellLoop = () => {
             {error}
           </p>
           <p className="mt-3 text-xs text-slate-400">
-            Verify the URL has the correct organization ID and secret.
+            Verify the server URL, organization ID, and secret.
           </p>
+          <button
+            onClick={() => setShowSettings(true)}
+            className="mt-5 w-full h-11 rounded-xl bg-violet-600 text-white border-2 border-slate-800 font-black shadow-[3px_3px_0px_0px_#1E293B] active:translate-y-0.5 transition flex items-center justify-center gap-2"
+          >
+            <Settings size={16} strokeWidth={2.5} />
+            Open Settings
+          </button>
         </div>
       </div>
     );
   }
 
+  /* 4. Main display */
   return (
     <div
       className={`min-h-screen flex flex-col font-jakarta bg-[#FFFDF5] ${
@@ -314,6 +511,16 @@ const stopBellLoop = () => {
           >
             <Maximize2 size={14} strokeWidth={2.5} />
             <span className="hidden md:inline">Fullscreen</span>
+          </button>
+
+          {/* 👇 Settings button */}
+          <button
+            onClick={() => setShowSettings(true)}
+            title="Server Settings"
+            className="h-10 px-3 rounded-xl bg-white border-2 border-slate-800 font-black text-xs shadow-[2px_2px_0px_0px_#1E293B] active:scale-95 transition flex items-center gap-2"
+          >
+            <Settings size={14} strokeWidth={2.5} />
+            <span className="hidden md:inline">Settings</span>
           </button>
         </div>
       </header>

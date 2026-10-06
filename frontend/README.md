@@ -14,3 +14,25 @@ The React Compiler is not enabled on this template because of its impact on dev 
 ## Expanding the ESLint configuration
 
 If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+
+
+
+# ─── Rebuild POS ───────────────────────────
+cd D:\Safina-pos\frontend
+npm run build:pos
+cd android-pos
+.\gradlew --stop
+.\gradlew assembleRelease
+Copy-Item app\build\outputs\apk\release\app-release.apk ..\Safina-POS-v1.1.apk
+cd ..
+
+# ─── Rebuild Waiter ────────────────────────
+npm run build:waiter
+cd android-waiter
+.\gradlew assembleRelease
+Copy-Item app\build\outputs\apk\release\app-release.apk ..\Safina-waiter-v1.1.apk
+cd ..
+
+# ─── Result ────────────────────────────────
+# D:\Safina-pos\frontend\Safina-POS-v1.1.apk
+# D:\Safina-pos\frontend\Safina-waiter-v1.1.apk

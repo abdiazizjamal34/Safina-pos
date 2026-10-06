@@ -1,8 +1,10 @@
-
-
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { useState } from 'react';
 import { Toaster } from 'react-hot-toast';
 import { useAuthStore } from './store/authStore';
+
+import PosSetup from './pages/pos/PosSetup';
+import { isConfigured } from './services/configService';
 
 import Login from './pages/Login';
 import Signup from './pages/Signup';
@@ -65,6 +67,19 @@ function HydrationSplash() {
       </div>
     </div>
   );
+}
+
+
+/* ── Server Config Gate ───────────────────────────────────── */
+
+function ServerConfigGate({ children }) {
+  const [configured, setConfigured] = useState(() => isConfigured());
+
+  if (!configured) {
+    return <PosSetup onSaved={() => setConfigured(true)} />;
+  }
+
+  return children;
 }
 
 
@@ -160,7 +175,6 @@ function CashierHome() {
 
 /* ── Guest Guard ───────────────────────────────────────────── */
 
-// Prevents logged-in users from seeing /login or /signup
 function GuestGuard({ children }) {
   const { user, _hydrated } = useAuthStore();
 
@@ -184,184 +198,165 @@ function GuestGuard({ children }) {
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <ServerConfigGate>
+      <BrowserRouter>
 
-      <Toaster
-        position="top-right"
-        toastOptions={{ duration: 3000 }}
-      />
-
-      <Routes>
-
-        {/* Authentication */}
-        <Route
-          path="/login"
-          element={
-            <GuestGuard>
-              <Login />
-            </GuestGuard>
-          }
+        <Toaster
+          position="top-right"
+          toastOptions={{ duration: 3000 }}
         />
 
-        <Route
-          path="/signup"
-          element={
-            <GuestGuard>
-              <Signup />
-            </GuestGuard>
-          }
-        />
+        <Routes>
 
-   {/* Public waiter display — no login required */}
-<Route path="/waiter-display" element={<WaiterDisplay />} />
-        {/* Kitchen */}
-        <Route
-          path="/kitchen"
-          element={
-            <RoleGuard allowedRoles={KITCHEN_ROLES}>
-              <KitchenDisplay station="KITCHEN" />
-            </RoleGuard>
-          }
-        />
-
-
-        {/* Bar */}
-        <Route
-          path="/bar"
-          element={
-            <RoleGuard allowedRoles={BAR_ROLES}>
-              <KitchenDisplay station="BAR" />
-            </RoleGuard>
-          }
-        />
-
-
-        {/* Cashier */}
-        <Route
-          path="/cashier"
-          element={
-            <RoleGuard allowedRoles={[ROLES.CASHIER]}>
-              <CashierHome />
-            </RoleGuard>
-          }
-        />
-
-
-        {/* Inventory */}
-        <Route
-          path="/inventory"
-          element={
-            <RoleGuard allowedRoles={[ROLES.INVENTORY]}>
-              <InventoryHome />
-            </RoleGuard>
-          }
-        />
-
-
-        {/* POS */}
-        <Route
-          path="/pos"
-          element={
-            <RoleGuard allowedRoles={POS_ROLES}>
-              <PosTerminal />
-            </RoleGuard>
-          }
-        />
-
-
-        {/* Backend */}
-        <Route
-          path="/backend"
-          element={
-            <AdminGuard>
-              <BackendLayout />
-            </AdminGuard>
-          }
-        >
-          <Route index element={<Dashboard />} />
-
+          {/* Authentication */}
           <Route
-            path="products"
+            path="/login"
             element={
-              <AdminOnlyGuard>
-                <Products />
-              </AdminOnlyGuard>
+              <GuestGuard>
+                <Login />
+              </GuestGuard>
             }
           />
 
           <Route
-            path="categories"
+            path="/signup"
             element={
-              <AdminOnlyGuard>
-                <Categories />
-              </AdminOnlyGuard>
+              <GuestGuard>
+                <Signup />
+              </GuestGuard>
             }
           />
 
+          {/* Public waiter display — no login required */}
+          <Route path="/waiter-display" element={<WaiterDisplay />} />
+
+          {/* Kitchen */}
           <Route
-            path="payment-methods"
+            path="/kitchen"
             element={
-              <AdminOnlyGuard>
-                <PaymentMethods />
-              </AdminOnlyGuard>
+              <RoleGuard allowedRoles={KITCHEN_ROLES}>
+                <KitchenDisplay station="KITCHEN" />
+              </RoleGuard>
             }
           />
 
+          {/* Bar */}
           <Route
-            path="tables"
+            path="/bar"
             element={
-              <AdminOnlyGuard>
-                <Tables />
-              </AdminOnlyGuard>
+              <RoleGuard allowedRoles={BAR_ROLES}>
+                <KitchenDisplay station="BAR" />
+              </RoleGuard>
             }
           />
 
+          {/* Cashier */}
           <Route
-            path="coupons"
+            path="/cashier"
             element={
-              <AdminOnlyGuard>
-                <Coupons />
-              </AdminOnlyGuard>
+              <RoleGuard allowedRoles={[ROLES.CASHIER]}>
+                <CashierHome />
+              </RoleGuard>
             }
           />
 
+          {/* Inventory */}
           <Route
-            path="users"
-            element={<Users />}
+            path="/inventory"
+            element={
+              <RoleGuard allowedRoles={[ROLES.INVENTORY]}>
+                <InventoryHome />
+              </RoleGuard>
+            }
           />
 
+          {/* POS */}
           <Route
-            path="reports"
-            element={<Reports />}
+            path="/pos"
+            element={
+              <RoleGuard allowedRoles={POS_ROLES}>
+                <PosTerminal />
+              </RoleGuard>
+            }
           />
-        </Route>
 
+          {/* Backend */}
+          <Route
+            path="/backend"
+            element={
+              <AdminGuard>
+                <BackendLayout />
+              </AdminGuard>
+            }
+          >
+            <Route index element={<Dashboard />} />
+            <Route
+              path="products"
+              element={
+                <AdminOnlyGuard>
+                  <Products />
+                </AdminOnlyGuard>
+              }
+            />
+            <Route
+              path="categories"
+              element={
+                <AdminOnlyGuard>
+                  <Categories />
+                </AdminOnlyGuard>
+              }
+            />
+            <Route
+              path="payment-methods"
+              element={
+                <AdminOnlyGuard>
+                  <PaymentMethods />
+                </AdminOnlyGuard>
+              }
+            />
+            <Route
+              path="tables"
+              element={
+                <AdminOnlyGuard>
+                  <Tables />
+                </AdminOnlyGuard>
+              }
+            />
+            <Route
+              path="coupons"
+              element={
+                <AdminOnlyGuard>
+                  <Coupons />
+                </AdminOnlyGuard>
+              }
+            />
+            <Route path="users" element={<Users />} />
+            <Route path="reports" element={<Reports />} />
+          </Route>
 
-        {/* Customer Credit
-            Accessible by Admin, Manager, Cashier and Waiter
-        */}
-        <Route
-          path="/customers/credit"
-          element={
-            <RoleGuard allowedRoles={CUSTOMER_CREDIT_ROLES}>
-              <CustomerCredit />
-            </RoleGuard>
-          }
-        />
+          {/* Customer Credit */}
+          <Route
+            path="/customers/credit"
+            element={
+              <RoleGuard allowedRoles={CUSTOMER_CREDIT_ROLES}>
+                <CustomerCredit />
+              </RoleGuard>
+            }
+          />
 
+          {/* Default */}
+          <Route
+            path="/"
+            element={
+              <GuestGuard>
+                <Navigate to="/login" replace />
+              </GuestGuard>
+            }
+          />
 
-        {/* Default */}
-        <Route
-          path="/"
-          element={
-            <GuestGuard>
-              <Navigate to="/login" replace />
-            </GuestGuard>
-          }
-        />
+        </Routes>
 
-      </Routes>
-
-    </BrowserRouter>
+      </BrowserRouter>
+    </ServerConfigGate>
   );
 }

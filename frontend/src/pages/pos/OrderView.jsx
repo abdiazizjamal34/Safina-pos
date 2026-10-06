@@ -12,17 +12,54 @@ import {
   X, Mail, Plus, Check, MapPin, Home, Truck, Package, ClipboardList, RotateCcw
 } from 'lucide-react';
 
-
 /* ─────────────────────────────────────────────────────────
    SMALL HELPERS
 ───────────────────────────────────────────────────────── */
 const fmt = (n) =>
   `ETB ${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+// const API_BASE_URL =
+//   import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
-const SERVER_BASE_URL = API_BASE_URL.replace(/\/api\/?$/, '');
+// const SERVER_BASE_URL = API_BASE_URL.replace(/\/api\/?$/, '');
+
+// const getImageUrl = (imageUrl) => {
+//   if (!imageUrl) return null;
+
+//   if (
+//     imageUrl.startsWith('http://') ||
+//     imageUrl.startsWith('https://') ||
+//     imageUrl.startsWith('blob:')
+//   ) {
+//     return imageUrl;
+//   }
+
+//   return `${SERVER_BASE_URL}${imageUrl.startsWith('/') ? '' : '/'}${imageUrl}`;
+// };
+
+
+import { loadConfig } from '../../services/configService';
+
+const FALLBACK_SERVER_URL = (
+  import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
+).replace(/\/api\/?$/, '');
+
+/**
+ * Resolve the server root URL dynamically.
+ * Priority:
+ *   1. User-saved server URL (setup screen)
+ *   2. Build-time VITE_API_URL
+ *   3. localhost fallback
+ */
+function getServerBase() {
+  try {
+    const cfg = loadConfig();
+    if (cfg.serverUrl) {
+      return cfg.serverUrl.replace(/\/$/, '');
+    }
+  } catch {}
+  return FALLBACK_SERVER_URL;
+}
 
 const getImageUrl = (imageUrl) => {
   if (!imageUrl) return null;
@@ -35,8 +72,10 @@ const getImageUrl = (imageUrl) => {
     return imageUrl;
   }
 
-  return `${SERVER_BASE_URL}${imageUrl.startsWith('/') ? '' : '/'}${imageUrl}`;
+  const base = getServerBase();
+  return `${base}${imageUrl.startsWith('/') ? '' : '/'}${imageUrl}`;
 };
+
 
 function Modal({ title, onClose, children, maxW = 'max-w-md' }) {
   return (

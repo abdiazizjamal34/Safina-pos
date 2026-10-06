@@ -1,0 +1,12 @@
+﻿{
+  "appId": "com.safina.waiter",
+  "appName": "Safina Waiter",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "http",
+    "cleartext": true
+  },
+  "android": {
+    "path": "android-waiter"
+  }
+}

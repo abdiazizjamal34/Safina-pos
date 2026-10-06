@@ -6,10 +6,20 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:pos": "powershell -ExecutionPolicy Bypass -File scripts/build-pos.ps1",
+    "build:waiter": "powershell -ExecutionPolicy Bypass -File scripts/build-waiter.ps1",
+    "open:pos": "powershell -ExecutionPolicy Bypass -File scripts/open-pos.ps1",
+    "open:waiter": "powershell -ExecutionPolicy Bypass -File scripts/open-waiter.ps1"
   },
   "dependencies": {
+    "@capacitor-community/keep-awake": "^8.0.1",
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/cli": "^8.5.2",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/local-notifications": "^8.3.1",
+    "@capawesome-team/capacitor-android-foreground-service": "^8.1.0",
     "axios": "^1.17.0",
     "file-saver": "^2.0.5",
     "lucide-react": "^1.18.0",
@@ -35,6 +45,7 @@
     "globals": "^17.6.0",
     "postcss": "^8.5.15",
     "tailwindcss": "^3.4.19",
+    "tslib": "^2.8.1",
     "vite": "^8.0.12"
   }
 }

@@ -80,34 +80,31 @@ export default function Products() {
   // Backend URL
   // --------------------------------------------------
   // Change this if your backend runs on another port/domain.
-const API_BASE_URL =
-  import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
-const SERVER_BASE_URL = API_BASE_URL.replace(/\/api\/?$/, '');
-  // --------------------------------------------------
-  // Build full image URL
-  // --------------------------------------------------
-  // const getImageUrl = (imageUrl) => {
-  //   if (!imageUrl) return null;
+const FALLBACK_SERVER_URL = (
+  import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
+).replace(/\/api\/?$/, '');
 
-  //   // Already a full URL
-  //   if (
-  //     imageUrl.startsWith('http://') ||
-  //     imageUrl.startsWith('https://') ||
-  //     imageUrl.startsWith('blob:')
-  //   ) {
-  //     return imageUrl;
-  //   }
+/**
+ * Resolve the server root URL dynamically.
+ * Priority:
+ *   1. User-saved server URL (setup screen)
+ *   2. Build-time VITE_API_URL
+ *   3. localhost fallback
+ */
+function getServerBase() {
+  try {
+    const cfg = loadConfig();
+    if (cfg.serverUrl) {
+      return cfg.serverUrl.replace(/\/$/, '');
+    }
+  } catch {}
+  return FALLBACK_SERVER_URL;
+}
 
-  //   // Backend returns something like:
-  //   // /uploads/products/example.jpg
-  //   return `${API_BASE_URL}${imageUrl.startsWith('/') ? '' : '/'}${imageUrl}`;
-  // };
-
-  const getImageUrl = (imageUrl) => {
+const getImageUrl = (imageUrl) => {
   if (!imageUrl) return null;
 
-  // Already a complete URL
   if (
     imageUrl.startsWith('http://') ||
     imageUrl.startsWith('https://') ||
@@ -116,12 +113,8 @@ const SERVER_BASE_URL = API_BASE_URL.replace(/\/api\/?$/, '');
     return imageUrl;
   }
 
-  // Example:
-  // imageUrl = /uploads/products/coffee.jpg
-  //
-  // Result:
-  // http://localhost:5000/uploads/products/coffee.jpg
-  return `${SERVER_BASE_URL}${imageUrl.startsWith('/') ? '' : '/'}${imageUrl}`;
+  const base = getServerBase();
+  return `${base}${imageUrl.startsWith('/') ? '' : '/'}${imageUrl}`;
 };
 
   // --------------------------------------------------
