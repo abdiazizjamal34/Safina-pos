@@ -38,6 +38,21 @@ const CustomTooltip = ({ active, payload, label }) => {
   );
 };
 
+const PAYMENT_COLOR_FALLBACK = {
+  Cash: '#10B981',
+  cash: '#10B981',
+  CASH: '#10B981',
+  Ebirr: '#F59E0B',
+  ebirr: '#F59E0B',
+  Card: '#3B82F6',
+  CARD: '#3B82F6',
+  card: '#3B82F6',
+  UPI: '#8B5CF6',
+  upi: '#8B5CF6',
+  'Credit (Loan)': '#F43F5E',
+  Credit: '#F43F5E',
+};
+
 function buildPrintHTML(data, period) {
   const prodRows = (data.topProducts || [])
     .map((p, i) => `<tr><td>${i+1}</td><td>${p.name}</td><td>${p.qty}</td><td>ETB ${ru(p.revenue)}</td></tr>`)
@@ -48,6 +63,31 @@ function buildPrintHTML(data, period) {
   const catRows = (data.topCategories || [])
     .map(c => `<tr><td>${c.name}</td><td>ETB ${ru(c.revenue)}</td></tr>`)
     .join('') || '<tr><td colspan="2" class="e">No data</td></tr>';
+
+  /* 👇 NEW: payment method rows for PDF */
+  const payMethods = data.paymentMethods?.methods || [];
+  const payRows = payMethods.length
+    ? payMethods.map(m => {
+        const color = m.color || PAYMENT_COLOR_FALLBACK[m.name] || '#8B5CF6';
+        return `<tr>
+          <td>
+            <span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${color};margin-right:6px;vertical-align:middle;"></span>
+            ${m.name}
+          </td>
+          <td>ETB ${ru(m.amount)}</td>
+          <td style="text-align:right">${m.percent.toFixed(1)}%</td>
+        </tr>`;
+      }).join('')
+    : '<tr><td colspan="3" class="e">No payments</td></tr>';
+
+  const payTotal = data.paymentMethods?.total || 0;
+  const payTotalRow = payMethods.length
+    ? `<tr style="font-weight:700;background:#f9fafb;">
+         <td>Total</td>
+         <td>ETB ${ru(payTotal)}</td>
+         <td style="text-align:right">100%</td>
+       </tr>`
+    : '';
 
   return [
     '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Cafe POS Report</title>',
@@ -87,6 +127,11 @@ function buildPrintHTML(data, period) {
     `<table><thead><tr><th>Order #</th><th>Amount</th><th>Time</th></tr></thead><tbody>${ordRows}</tbody></table></div>`,
     '<div class="box"><div class="bt">Sales by Category</div>',
     `<table><thead><tr><th>Category</th><th>Revenue</th></tr></thead><tbody>${catRows}</tbody></table></div>`,
+    '</div>',
+    /* 👇 NEW: payment methods section for PDF */
+    '<div style="margin-top:14px">',
+    '<div class="box"><div class="bt">Sales by Payment Method</div>',
+    `<table><thead><tr><th>Method</th><th>Amount</th><th style="text-align:right">% of Total</th></tr></thead><tbody>${payRows}${payTotalRow}</tbody></table></div>`,
     '</div>',
     `<footer>Cafe POS &mdash; Confidential &mdash; ${new Date().toLocaleDateString('en-IN')}</footer>`,
     '</body></html>',
@@ -169,6 +214,7 @@ export default function Reports() {
       ['Total Revenue (ETB)', f(data.revenue)],
       ['Avg Order Value (ETB)', f(data.avgOrderValue)],
       ['Top Product', data.topProducts?.[0]?.name||'-'],
+      ['Top Payment Method', data.paymentMethods?.methods?.[0]?.name || '-'],
     ]);
     ws1['!cols']=[{wch:26},{wch:22}];
     XLSX.utils.book_append_sheet(wb, ws1, 'Summary');
@@ -190,6 +236,25 @@ export default function Reports() {
     ]);
     ws4['!cols']=[{wch:20},{wch:16},{wch:24}];
     XLSX.utils.book_append_sheet(wb, ws4, 'Orders');
+
+    /* 👇 NEW: Payment Methods sheet */
+    const payMethods = data.paymentMethods?.methods || [];
+    const payTotal = data.paymentMethods?.total || 0;
+    const ws5 = XLSX.utils.aoa_to_sheet([
+      ['Method', 'Amount (ETB)', '% of Total', 'Transactions'],
+      ...payMethods.map(m => [
+        m.name,
+        f(m.amount),
+        m.percent.toFixed(1) + '%',
+        m.count || 0,
+      ]),
+      ...(payMethods.length
+        ? [['Total', f(payTotal), '100%', payMethods.reduce((s, m) => s + (m.count || 0), 0)]]
+        : []),
+    ]);
+    ws5['!cols'] = [{wch:24},{wch:16},{wch:12},{wch:14}];
+    XLSX.utils.book_append_sheet(wb, ws5, 'Payment Methods');
+
     return wb;
   };
 
@@ -197,6 +262,11 @@ export default function Reports() {
   const buildCSV = () => {
     const f = n => Number(n||0).toFixed(2);
     const q = v => `"${String(v??'').replace(/"/g,'""')}"`;
+
+    /* 👇 NEW: payment methods */
+    const payMethods = data.paymentMethods?.methods || [];
+    const payTotal = data.paymentMethods?.total || 0;
+
     return '\uFEFF' + [
       ['Cafe POS Report',`Period:${period}`,`Generated:${new Date().toLocaleString('en-IN')}`],
       [],['SUMMARY'],
@@ -209,6 +279,10 @@ export default function Reports() {
       ...(data.topCategories||[]).map(c=>[c.name,f(c.revenue)]),
       [],['TOP ORDERS'],['Order #','Amount (ETB)','Date & Time'],
       ...(data.topOrders||[]).map(o=>[o.orderNumber,f(o.total),new Date(o.createdAt).toLocaleString('en-IN')]),
+      /* 👇 NEW: payment methods section */
+      [],['PAYMENT METHODS'],['Method','Amount (ETB)','% of Total'],
+      ...payMethods.map(m=>[m.name, f(m.amount), m.percent.toFixed(1)+'%']),
+      ...(payMethods.length ? [['Total', f(payTotal), '100%']] : []),
     ].map(r=>r.map(q).join(',')).join('\r\n');
   };
 
@@ -411,6 +485,116 @@ export default function Reports() {
                 <div className="h-48 flex items-center justify-center text-slate-400 font-semibold">No category data</div>
               )}
             </div>
+          </div>
+
+          {/* ── Sales by Payment Method ── */}
+          <div className="rounded-2xl border-2 border-slate-800 bg-white p-5 shadow-pop-sm mb-6">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-8 h-8 rounded-lg bg-violet-100 border-2 border-slate-800 flex items-center justify-center">
+                <CreditCard size={15} strokeWidth={2.5} className="text-violet-700" />
+              </div>
+              <h3 className="font-black text-slate-800 font-outfit">
+                Sales by Payment Method
+              </h3>
+            </div>
+
+            {!data?.paymentMethods?.methods?.length ? (
+              <div className="text-center text-sm text-slate-400 py-10">
+                No payments in this period
+              </div>
+            ) : (
+              <div className="flex flex-col lg:flex-row gap-5 items-center">
+                {/* Donut chart */}
+                <div className="relative shrink-0" style={{ width: 150, height: 150 }}>
+                  <svg
+                    viewBox="0 0 42 42"
+                    className="w-full h-full"
+                    style={{ transform: 'rotate(-90deg)' }}
+                  >
+                    <circle
+                      cx="21"
+                      cy="21"
+                      r="15.9155"
+                      fill="transparent"
+                      stroke="#E2E8F0"
+                      strokeWidth="5"
+                    />
+                    {(() => {
+                      let offset = 0;
+                      return data.paymentMethods.methods.map((m) => {
+                        const dash = (m.percent / 100) * 100;
+                        const color =
+                          m.color ||
+                          PAYMENT_COLOR_FALLBACK[m.name] ||
+                          '#8B5CF6';
+                        const el = (
+                          <circle
+                            key={m.name}
+                            cx="21"
+                            cy="21"
+                            r="15.9155"
+                            fill="transparent"
+                            stroke={color}
+                            strokeWidth="5"
+                            strokeDasharray={`${dash} ${100 - dash}`}
+                            strokeDashoffset={-offset}
+                          />
+                        );
+                        offset += dash;
+                        return el;
+                      });
+                    })()}
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">
+                      Total
+                    </div>
+                    <div className="text-sm font-black text-slate-800 font-outfit">
+                      {fmt(data.paymentMethods.total)}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Legend */}
+                <div className="flex-1 min-w-0 w-full space-y-2">
+                  {data.paymentMethods.methods.map((m) => {
+                    const color =
+                      m.color ||
+                      PAYMENT_COLOR_FALLBACK[m.name] ||
+                      '#8B5CF6';
+                    return (
+                      <div key={m.name} className="flex items-center gap-2 text-sm">
+                        <div
+                          className="w-3 h-3 rounded-sm border border-slate-800 shrink-0"
+                          style={{ background: color }}
+                        />
+                        <span className="font-bold text-slate-700 truncate flex-1">
+                          {m.name}
+                        </span>
+                        <span className="font-mono font-bold text-slate-800 text-xs shrink-0">
+                          {fmt(m.amount)}
+                        </span>
+                        <span className="text-slate-400 text-xs font-semibold shrink-0 w-12 text-right">
+                          {m.percent.toFixed(1)}%
+                        </span>
+                      </div>
+                    );
+                  })}
+
+                  {/* Total row */}
+                  <div className="flex items-center gap-2 text-sm pt-2 border-t-2 border-slate-100">
+                    <div className="w-3 h-3 shrink-0" />
+                    <span className="font-black text-slate-800 flex-1">Total</span>
+                    <span className="font-mono font-black text-violet-600 text-sm">
+                      {fmt(data.paymentMethods.total)}
+                    </span>
+                    <span className="text-slate-400 text-xs font-semibold shrink-0 w-12 text-right">
+                      100%
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* ── Tables ── */}

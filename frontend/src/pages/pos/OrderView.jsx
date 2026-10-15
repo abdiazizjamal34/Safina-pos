@@ -9,7 +9,8 @@ import {
   Armchair, ShoppingBag, User, Ticket, ChefHat, Search,
   Loader2, CheckCircle2, Wallet, CreditCard, Smartphone,
   Printer, Coins, Sparkles, Coffee, ShoppingCart, AlertTriangle,
-  X, Mail, Plus, Check, MapPin, Home, Truck, Package, ClipboardList, RotateCcw
+  X, Mail, Plus, Check, MapPin, Home, Truck, Package, ClipboardList, RotateCcw,
+  ArrowLeft
 } from 'lucide-react';
 
 
@@ -474,7 +475,9 @@ export default function OrderView({ table, session, existingOrder, initialOrder,
 
   /* ── cart ── */
   const [cartItems, setCartItems] = useState([]);
-  const [activeCat, setActiveCat] = useState('all');
+  // const [activeCat, setActiveCat] = useState('all');
+const [view, setView] = useState('categories'); // 'categories' | 'products'
+const [selectedCategoryId, setSelectedCategoryId] = useState('all');
   const [localSearch, setLocalSearch] = useState('');
   const [coupon, setCoupon] = useState(null);
   const [customers, setCustomers] = useState([]);
@@ -861,12 +864,38 @@ useEffect(() => {
   const isPartialCredit = putRemainingOnCredit && parsedPayAmount > 0 && parsedPayAmount < total;
 
   /* ────── filtered products ────── */
-  const visibleProducts = products.filter(p => {
-    const matchCat = activeCat === 'all' || p.categoryId === activeCat;
-    const q = localSearch.trim().toLowerCase();
-    const matchSearch = !q || p.name.toLowerCase().includes(q);
-    return matchCat && matchSearch;
-  });
+  // const visibleProducts = products.filter(p => {
+  //   const matchCat = activeCat === 'all' || p.categoryId === activeCat;
+  //   const q = localSearch.trim().toLowerCase();
+  //   const matchSearch = !q || p.name.toLowerCase().includes(q);
+  //   return matchCat && matchSearch;
+  // });
+
+/* ────── Category helpers ────── */
+const productCountByCategory = products.reduce((acc, p) => {
+  const key = p.categoryId || 'uncategorized';
+  acc[key] = (acc[key] || 0) + 1;
+  return acc;
+}, {});
+
+const totalProductCount = products.length;
+
+const selectedCategory = categories.find(
+  (c) => c.id === selectedCategoryId
+);
+
+const visibleProducts = products.filter((p) => {
+  const matchCat =
+    selectedCategoryId === 'all' || p.categoryId === selectedCategoryId;
+
+  const q = localSearch.trim().toLowerCase();
+  const matchSearch = !q || p.name.toLowerCase().includes(q);
+
+  return matchCat && matchSearch;
+});
+
+
+
 
   /* ────── cart helpers ────── */
   const addToCart = (product) => {
@@ -1383,231 +1412,432 @@ const handlePay = async () => {
       </div>
 
       {/* ══ LEFT — Product Grid ══════════════════════════ */}
-      <div className={`pos-product-col flex-col shrink-0 border-r ${mobileTab === 'products' ? 'flex' : 'hidden'} lg:flex lg:w-[58%] w-full h-full`}
+    {/* ── Search bar (always visible) ── */}
+<div className={`flex flex-col flex-1 border-r ${mobileTab === 'products' ? 'flex' : 'hidden'} lg:flex w-full lg:w-auto h-full min-w-0 min-h-0`}
            style={{ borderColor: BORDER, background: BG }}>
 
-        {/* Category tabs + Local search bar */}
-        <div className="shrink-0 px-4 pt-3 pb-2 space-y-2" style={{ background: WHITE, borderBottom: `2px solid ${BORDER}` }}>
-          <div className="relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: MUTED }} />
-            <input
-              value={localSearch}
-              onChange={e => setLocalSearch(e.target.value)}
-              placeholder="Search products…"
-              className="w-full text-sm rounded-xl pl-9 pr-9 py-2.5 focus:outline-none transition"
-              style={{ background: '#F8FAFC', border: `2px solid ${BORDER}`, color: FG }}
-              onFocus={e => { e.target.style.borderColor = ACCENT; e.target.style.boxShadow = `4px 4px 0px 0px ${ACCENT}`; }}
-              onBlur={e => { e.target.style.borderColor = BORDER; e.target.style.boxShadow = 'none'; }}
-            />
-            {localSearch && (
-              <button
-                onClick={() => setLocalSearch('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-650 p-1 hover:bg-slate-200/50 rounded-lg transition"
-              >
-                <X size={14} />
-              </button>
-            )}
-          </div>
+      {/* ── Search bar (always visible) ── */}
+      <div className="shrink-0 px-4 pt-3 pb-2" style={{ background: WHITE, borderBottom: `2px solid ${BORDER}` }}></div>
+  
+  <div className="relative">
+    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: MUTED }} />
+    <input
+      value={localSearch}
+      onChange={e => setLocalSearch(e.target.value)}
+      placeholder={
+        view === 'categories'
+          ? 'Search products across all categories…'
+          : `Search in ${selectedCategory?.name || 'category'}…`
+      }
+      className="w-full text-sm rounded-xl pl-9 pr-9 py-2.5 focus:outline-none transition"
+      style={{ background: '#F8FAFC', border: `2px solid ${BORDER}`, color: FG }}
+      onFocus={e => { e.target.style.borderColor = ACCENT; e.target.style.boxShadow = `4px 4px 0px 0px ${ACCENT}`; }}
+      onBlur={e => { e.target.style.borderColor = BORDER; e.target.style.boxShadow = 'none'; }}
+    />
+    {localSearch && (
+      <button
+        onClick={() => setLocalSearch('')}
+        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-650 p-1 hover:bg-slate-200/50 rounded-lg transition"
+      >
+        <X size={14} />
+      </button>
+    )}
+  </div>
 
-          {/* Category tabs */}
-          <div className="flex gap-1.5 overflow-x-auto scrollbar-none pb-1">
-            <button
-              onClick={() => setActiveCat('all')}
-              className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200"
-              style={activeCat === 'all'
-                ? { background: ACCENT, color: '#fff', border: `2px solid ${FG}`, boxShadow: '2px 2px 0px 0px #1E293B' }
-                : { background: WHITE, color: MUTED, border: `2px solid ${BORDER}` }}
+
+{/* ── Category Grid View ── */}
+
+{/* ── Category Grid View ── */}
+{view === 'categories' && (
+  <div className="flex-1 overflow-y-auto p-4" style={{ background: BG }}>
+    {dataLoading ? (
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div key={i} className="rounded-2xl" style={{ height: 140, background: BORDER, opacity: 0.6 }} />
+        ))}
+      </div>
+    ) : (
+      <>
+        {/* Section header */}
+        <div className="flex items-center gap-2 mb-3">
+          <span
+            className="text-[10px] font-black uppercase tracking-widest"
+            style={{ color: MUTED, fontFamily: FONT_H }}
+          >
+            Browse Categories
+          </span>
+          <span
+            className="flex-1 h-px"
+            style={{ background: BORDER }}
+          />
+          <span
+            className="text-[10px] font-black px-2 py-0.5 rounded-md border-2"
+            style={{ color: MUTED, borderColor: BORDER, background: WHITE }}
+          >
+            {categories.length} categor{categories.length === 1 ? 'y' : 'ies'}
+          </span>
+        </div>
+
+        {/* Category grid — fixed 140px tiles that fill the row */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
+          {/* "All Items" card */}
+          <button
+            onClick={() => {
+              setSelectedCategoryId('all');
+              setView('products');
+            }}
+            className="category-card group relative text-left rounded-2xl p-3.5 transition-all duration-200 active:scale-95 overflow-hidden flex flex-col"
+            style={{
+              background: WHITE,
+              border: `2px solid ${FG}`,
+              boxShadow: `3px 3px 0px 0px ${FG}`,
+              height: 140,
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.transform = 'translate(-2px,-2px)';
+              e.currentTarget.style.boxShadow = `5px 5px 0px 0px ${FG}`;
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.transform = 'translate(0,0)';
+              e.currentTarget.style.boxShadow = `3px 3px 0px 0px ${FG}`;
+            }}
+          >
+            {/* Top: icon */}
+            <div
+              className="w-12 h-12 rounded-xl flex items-center justify-center border-2 shrink-0"
+              style={{ background: ACCENT, borderColor: FG, boxShadow: '2px 2px 0px 0px #1E293B' }}
             >
-              All
-            </button>
-            {categories.map(c => (
+              <Sparkles size={22} color="#fff" strokeWidth={2.5} />
+            </div>
+
+            {/* Bottom: name + count */}
+            <div className="mt-auto w-full">
+              <div
+                className="font-black leading-tight line-clamp-1"
+                style={{ color: FG, fontFamily: FONT_H, fontSize: 15 }}
+              >
+                All Items
+              </div>
+              <div
+                className="text-[11px] font-bold mt-0.5 flex items-center gap-1"
+                style={{ color: MUTED }}
+              >
+                <Package size={10} strokeWidth={2.5} />
+                {totalProductCount} item{totalProductCount !== 1 ? 's' : ''}
+              </div>
+            </div>
+
+            {/* Big decorative icon watermark */}
+            <div
+              className="absolute -right-3 -bottom-3 opacity-[0.08] pointer-events-none"
+              style={{ color: ACCENT }}
+            >
+              <Sparkles size={80} strokeWidth={1.5} />
+            </div>
+          </button>
+
+          {/* Category cards */}
+          {categories.map(c => {
+            const catColor = c.color || ACCENT;
+            const count = productCountByCategory[c.id] || 0;
+            const isEmpty = count === 0;
+
+            return (
               <button
                 key={c.id}
-                onClick={() => setActiveCat(c.id)}
-                className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200"
-                style={activeCat === c.id
-                  ? { background: c.color, color: '#fff', border: `2px solid ${FG}`, boxShadow: '2px 2px 0px 0px #1E293B' }
-                  : { background: WHITE, color: MUTED, border: `2px solid ${BORDER}` }}
+                onClick={() => {
+                  setSelectedCategoryId(c.id);
+                  setView('products');
+                }}
+                className="category-card group relative text-left rounded-2xl p-3.5 transition-all duration-200 active:scale-95 overflow-hidden flex flex-col"
+                style={{
+                  background: WHITE,
+                  border: `2px solid ${catColor}`,
+                  boxShadow: `3px 3px 0px 0px ${catColor}`,
+                  height: 140,
+                  opacity: isEmpty ? 0.75 : 1,
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.transform = 'translate(-2px,-2px)';
+                  e.currentTarget.style.boxShadow = `5px 5px 0px 0px ${catColor}`;
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.transform = 'translate(0,0)';
+                  e.currentTarget.style.boxShadow = `3px 3px 0px 0px ${catColor}`;
+                }}
               >
-                {c.name}
+                {/* Top: icon */}
+                <div
+                  className="w-12 h-12 rounded-xl flex items-center justify-center border-2 shrink-0"
+                  style={{ background: catColor, borderColor: FG, boxShadow: '2px 2px 0px 0px #1E293B' }}
+                >
+                  <Coffee size={22} color="#fff" strokeWidth={2.5} />
+                </div>
+
+                {/* Bottom: name + count */}
+                <div className="mt-auto w-full relative z-10">
+                  <div
+                    className="font-black leading-tight line-clamp-1"
+                    style={{ color: FG, fontFamily: FONT_H, fontSize: 15 }}
+                    title={c.name}
+                  >
+                    {c.name}
+                  </div>
+                  <div
+                    className="text-[11px] font-bold mt-0.5 flex items-center gap-1"
+                    style={{ color: isEmpty ? '#94A3B8' : MUTED }}
+                  >
+                    <Package size={10} strokeWidth={2.5} />
+                    {count} item{count !== 1 ? 's' : ''}
+                  </div>
+                </div>
+
+                {/* Big decorative icon watermark */}
+                <div
+                  className="absolute -right-3 -bottom-3 opacity-[0.08] pointer-events-none"
+                  style={{ color: catColor }}
+                >
+                  <Coffee size={80} strokeWidth={1.5} />
+                </div>
+
+                {/* Bottom color bar */}
+                <div
+                  className="absolute bottom-0 left-0 right-0 h-1"
+                  style={{ background: catColor }}
+                />
               </button>
-            ))}
-          </div>
+            );
+          })}
         </div>
 
-        {/* Products grid */}
-        <div className="flex-1 overflow-y-auto p-3" style={{ background: BG }}>
-          {dataLoading ? (
-            <div className="grid grid-cols-3 xl:grid-cols-4 gap-2.5">
-              {Array.from({ length: 12 }).map((_, i) => (
-                <div key={i} className="rounded-xl" style={{ minHeight: 110, background: BORDER, animationDelay: `${i * 50}ms`, opacity: 0.6 }} />
-              ))}
+        {/* Empty state */}
+        {!dataLoading && categories.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
+            <div
+              className="w-16 h-16 rounded-2xl flex items-center justify-center border-2"
+              style={{ background: WHITE, borderColor: BORDER, boxShadow: `4px 4px 0px 0px ${BORDER}` }}
+            >
+              <Search size={28} style={{ color: MUTED }} />
             </div>
-          ) : (
-            <div className="pos-product-grid grid grid-cols-3 xl:grid-cols-4 gap-2.5">
-            {visibleProducts.map(p => {
-  const catColor = p.category?.color || '#8B5CF6';
-  const inCart = cartItems.find(i => i.productId === p.id);
-  const imageUrl = getImageUrl(p.imageUrl);
-
-  return (
-    <button
-      key={p.id}
-      onClick={() => addToCart(p)}
-      className="product-card group relative text-left rounded-xl p-2.5 transition-all duration-200 active:scale-95 flex flex-col justify-between overflow-hidden"
-      style={{
-        background: WHITE,
-        border: `2px solid ${inCart ? catColor : BORDER}`,
-        minHeight: 190,
-        boxShadow: inCart
-          ? `4px 4px 0px 0px ${catColor}`
-          : `4px 4px 0px 0px ${BORDER}`,
-      }}
-      onMouseEnter={e => {
-        e.currentTarget.style.borderColor = catColor;
-        e.currentTarget.style.boxShadow = `4px 4px 0px 0px ${catColor}`;
-        e.currentTarget.style.transform = 'translate(-2px,-2px)';
-      }}
-      onMouseLeave={e => {
-        e.currentTarget.style.borderColor = inCart ? catColor : BORDER;
-        e.currentTarget.style.boxShadow = inCart
-          ? `4px 4px 0px 0px ${catColor}`
-          : `4px 4px 0px 0px ${BORDER}`;
-        e.currentTarget.style.transform = 'translate(0,0)';
-      }}
-    >
-      {/* Product image */}
-      <div
-        className="w-full rounded-lg overflow-hidden mb-2.5 relative"
-        style={{
-          height: 100,
-          background: `${catColor}12`,
-        }}
-      >
-        {imageUrl ? (
-          <img
-            src={imageUrl}
-            alt={p.name}
-            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-            loading="lazy"
-            onError={(e) => {
-              e.currentTarget.style.display = 'none';
-              e.currentTarget.nextElementSibling?.classList.remove('hidden');
-            }}
-          />
-        ) : null}
-
-        {/* Fallback when no image */}
-        <div
-          className={`${imageUrl ? 'hidden' : ''} absolute inset-0 flex items-center justify-center`}
-          style={{ color: catColor }}
-        >
-          <Coffee size={30} strokeWidth={1.8} />
-        </div>
-
-        {/* Category color bar */}
-        <div
-          className="absolute bottom-0 left-0 right-0 h-1"
-          style={{ background: catColor }}
-        />
-      </div>
-
-      {/* Product information */}
-      <div className="w-full">
-        <div
-          className="product-card-name font-bold leading-tight mb-1 line-clamp-1"
-          style={{
-            color: FG,
-            fontSize: 13,
-            fontFamily: FONT_H,
-          }}
-        >
-          {p.name}
-        </div>
-
-        {p.description && (
-          <div
-            className="text-[10px] leading-tight text-slate-400 mb-2 line-clamp-2"
-            style={{ fontFamily: FONT_B }}
-          >
-            {p.description}
+            <div className="text-sm font-semibold" style={{ color: MUTED }}>
+              No categories yet
+            </div>
+            <div className="text-xs" style={{ color: '#CBD5E1' }}>
+              Add categories from the admin panel
+            </div>
           </div>
         )}
+      </>
+    )}
+  </div>
+)}
+
+
+{/* ── Products View ── */}
+{view === 'products' && (
+  <div className="flex-1 overflow-hidden flex flex-col">
+    {/* Back bar */}
+    {/* Back bar */}
+<div
+  className="shrink-0 px-3 py-2.5 flex items-center gap-2"
+  style={{ background: WHITE, borderBottom: `2px solid ${BORDER}` }}
+>
+  <button
+    onClick={() => {
+      setView('categories');
+      setLocalSearch('');
+    }}
+    className="h-9 px-3 rounded-xl flex items-center gap-1.5 text-xs font-black transition border-2 hover:-translate-x-0.5"
+    style={{
+      background: WHITE,
+      color: FG,
+      borderColor: FG,
+      boxShadow: '2px 2px 0px 0px #1E293B',
+      fontFamily: FONT_H,
+    }}
+  >
+    <ArrowLeft size={14} strokeWidth={2.5} />
+    Back
+  </button>
+
+  <div className="flex-1 min-w-0 flex items-center gap-2">
+    <div
+      className="w-3 h-6 rounded-full shrink-0 border-2"
+      style={{
+        background: selectedCategoryId === 'all' ? ACCENT : (selectedCategory?.color || ACCENT),
+        borderColor: FG,
+      }}
+    />
+    <div className="min-w-0">
+      <div
+        className="font-black text-sm truncate leading-tight"
+        style={{ color: FG, fontFamily: FONT_H }}
+      >
+        {selectedCategoryId === 'all' ? 'All Items' : (selectedCategory?.name || 'Category')}
       </div>
-
-      {/* Price */}
-      <div className="flex items-baseline justify-between mt-auto w-full">
-        <div
-          className="font-black"
-          style={{
-            color: catColor,
-            fontSize: 16,
-          }}
-        >
-          ETB {parseFloat(p.price).toFixed(0)}
-        </div>
-
-        <div
-          className="text-[10px] font-semibold"
-          style={{ color: MUTED }}
-        >
-          {p.unitOfMeasure}
-        </div>
+      <div className="text-[10px] font-bold" style={{ color: MUTED }}>
+        {visibleProducts.length} product{visibleProducts.length !== 1 ? 's' : ''}
       </div>
+    </div>
+  </div>
+</div>
 
-      {/* Quantity badge */}
-      {inCart && (
-        <div
-          className="absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center text-xs font-black text-white border-2 border-white"
-          style={{ background: catColor }}
-        >
-          {inCart.quantity}
+    {/* Product grid */}
+    <div className="flex-1 overflow-y-auto p-3" style={{ background: BG }}>
+      {dataLoading ? (
+        <div className="grid grid-cols-3 xl:grid-cols-4 gap-2.5">
+          {Array.from({ length: 12 }).map((_, i) => (
+            <div key={i} className="rounded-xl" style={{ minHeight: 110, background: BORDER, opacity: 0.6 }} />
+          ))}
         </div>
-      )}
+      ) : visibleProducts.length === 0 ? (
+        <div className="flex flex-col items-center justify-center h-48 gap-3 text-center">
+          <div className="w-16 h-16 rounded-2xl flex items-center justify-center border-2" style={{ background: WHITE, borderColor: BORDER, boxShadow: `4px 4px 0px 0px ${BORDER}` }}>
+            <Search size={28} style={{ color: MUTED }} />
+          </div>
+          <div className="text-sm font-semibold" style={{ color: MUTED }}>
+            {localSearch ? `No products matching "${localSearch}"` : 'No products in this category'}
+          </div>
+          <button
+            onClick={() => {
+              setView('categories');
+              setLocalSearch('');
+            }}
+            className="mt-2 h-9 px-4 rounded-xl flex items-center gap-1.5 text-xs font-black border-2 transition"
+            style={{ background: WHITE, color: FG, borderColor: FG, boxShadow: '2px 2px 0px 0px #1E293B' }}
+          >
+            <ArrowLeft size={13} strokeWidth={2.5} />
+            Back to categories
+          </button>
+        </div>
+      ) : (
+        <div className="pos-product-grid grid grid-cols-3 xl:grid-cols-4 gap-2.5">
+          {visibleProducts.map(p => {
+            const catColor = p.category?.color || '#8B5CF6';
+            const inCart = cartItems.find(i => i.productId === p.id);
+            const imageUrl = getImageUrl(p.imageUrl);
 
-      {/* Add (+) on hover */}
-      {!inCart && (
-        <div
-          className="absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center text-white text-sm font-black opacity-0 group-hover:opacity-100 transition border-2 border-white"
-          style={{ background: catColor }}
-        >
-          +
-        </div>
-      )}
-    </button>
-  );
-})}
-            </div>
-          )}
-          {!dataLoading && visibleProducts.length === 0 && (
-            <div className="flex flex-col items-center justify-center h-48 gap-3 text-center">
-              <div className="w-16 h-16 rounded-2xl flex items-center justify-center border-2" style={{ background: WHITE, borderColor: BORDER, boxShadow: `4px 4px 0px 0px ${BORDER}` }}>
-                <Search size={28} style={{ color: MUTED }} />
-              </div>
-              <div className="text-sm font-semibold" style={{ color: MUTED }}>
-                {localSearch ? `No products matching "${localSearch}"` : 'No products in this category'}
-              </div>
-            </div>
-          )}
-          {/* Mobile floating View Cart banner */}
-          {cartItems.length > 0 && (
-            <div className="lg:hidden p-3 bg-[#FFFDF5] border-t-2 border-[#1E293B] sticky bottom-0 left-0 right-0 z-10 shrink-0">
+            return (
               <button
-                type="button"
-                onClick={() => setMobileTab('cart')}
-                className="w-full h-11 flex items-center justify-between px-4 rounded-xl font-black text-sm transition-all duration-200 border-2"
-                style={{ background: ACCENT, color: '#fff', borderColor: FG, boxShadow: `3px 3px 0px 0px ${FG}` }}
+                key={p.id}
+                onClick={() => addToCart(p)}
+                className="product-card group relative text-left rounded-xl p-2.5 transition-all duration-200 active:scale-95 flex flex-col justify-between overflow-hidden"
+                style={{
+                  background: WHITE,
+                  border: `2px solid ${inCart ? catColor : BORDER}`,
+                  minHeight: 190,
+                  boxShadow: inCart ? `4px 4px 0px 0px ${catColor}` : `4px 4px 0px 0px ${BORDER}`,
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.borderColor = catColor;
+                  e.currentTarget.style.boxShadow = `4px 4px 0px 0px ${catColor}`;
+                  e.currentTarget.style.transform = 'translate(-2px,-2px)';
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.borderColor = inCart ? catColor : BORDER;
+                  e.currentTarget.style.boxShadow = inCart ? `4px 4px 0px 0px ${catColor}` : `4px 4px 0px 0px ${BORDER}`;
+                  e.currentTarget.style.transform = 'translate(0,0)';
+                }}
               >
-                <span className="flex items-center gap-1.5">
-                  <ShoppingCart size={15} strokeWidth={2.5} />
-                  View Cart ({cartItems.length} item{cartItems.length !== 1 ? 's' : ''})
-                </span>
-                <span>{fmt(total)}</span>
+                {/* Product image */}
+                <div
+                  className="w-full rounded-lg overflow-hidden mb-2.5 relative"
+                  style={{ height: 100, background: `${catColor}12` }}
+                >
+                  {imageUrl ? (
+                    <img
+                      src={imageUrl}
+                      alt={p.name}
+                      className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                      loading="lazy"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                        e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                      }}
+                    />
+                  ) : null}
+
+                  <div
+                    className={`${imageUrl ? 'hidden' : ''} absolute inset-0 flex items-center justify-center`}
+                    style={{ color: catColor }}
+                  >
+                    <Coffee size={30} strokeWidth={1.8} />
+                  </div>
+
+                  <div className="absolute bottom-0 left-0 right-0 h-1" style={{ background: catColor }} />
+                </div>
+
+                <div className="w-full">
+                  <div
+                    className="product-card-name font-bold leading-tight mb-1 line-clamp-1"
+                    style={{ color: FG, fontSize: 13, fontFamily: FONT_H }}
+                  >
+                    {p.name}
+                  </div>
+
+                  {p.description && (
+                    <div
+                      className="text-[10px] leading-tight text-slate-400 mb-2 line-clamp-2"
+                      style={{ fontFamily: FONT_B }}
+                    >
+                      {p.description}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-baseline justify-between mt-auto w-full">
+                  <div className="font-black" style={{ color: catColor, fontSize: 16 }}>
+                    ETB {parseFloat(p.price).toFixed(0)}
+                  </div>
+                  <div className="text-[10px] font-semibold" style={{ color: MUTED }}>
+                    {p.unitOfMeasure}
+                  </div>
+                </div>
+
+                {inCart && (
+                  <div
+                    className="absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center text-xs font-black text-white border-2 border-white"
+                    style={{ background: catColor }}
+                  >
+                    {inCart.quantity}
+                  </div>
+                )}
+
+                {!inCart && (
+                  <div
+                    className="absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center text-white text-sm font-black opacity-0 group-hover:opacity-100 transition border-2 border-white"
+                    style={{ background: catColor }}
+                  >
+                    +
+                  </div>
+                )}
               </button>
-            </div>
-          )}
+            );
+          })}
         </div>
-      </div>
+      )}
+
+      {/* Mobile floating View Cart banner */}
+      {cartItems.length > 0 && (
+        <div className="lg:hidden p-3 bg-[#FFFDF5] border-t-2 border-[#1E293B] sticky bottom-0 left-0 right-0 z-10 shrink-0">
+          <button
+            type="button"
+            onClick={() => setMobileTab('cart')}
+            className="w-full h-11 flex items-center justify-between px-4 rounded-xl font-black text-sm transition-all duration-200 border-2"
+            style={{ background: ACCENT, color: '#fff', borderColor: FG, boxShadow: `3px 3px 0px 0px ${FG}` }}
+          >
+            <span className="flex items-center gap-1.5">
+              <ShoppingCart size={15} strokeWidth={2.5} />
+              View Cart ({cartItems.length} item{cartItems.length !== 1 ? 's' : ''})
+            </span>
+            <span>{fmt(total)}</span>
+          </button>
+        </div>
+      )}
+    </div>
+  </div>
+)}
+</div>
 
       {/* ══ RIGHT — Cart + Payment ════════════════════════ */}
       <div className={`pos-cart-col flex-col flex-1 ${mobileTab === 'cart' ? 'flex' : 'hidden'} lg:flex h-full min-h-0`} style={{ background: WHITE, borderLeft: `2px solid ${BORDER}` }}>
