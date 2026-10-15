@@ -7,6 +7,16 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+
+# Android generated folders
+android-pos/
+android-waiter/
+
+# Keystores & signing
+*.jks
+*.keystore
+keystore.properties
+
 node_modules
 dist
 dist-ssr
@@ -22,3 +32,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+
+# Env files (except maybe a .env.example)
+.env
+.env.*
+!.env.example
