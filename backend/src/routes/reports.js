@@ -14,6 +14,7 @@ const validateReportQuery = (query) => {
   if (to && Number.isNaN(Date.parse(to))) return 'Invalid to date';
   if (from && to && new Date(from) > new Date(to)) return 'from date must be before to date';
   return null;
+
 };
 
 router.get('/dashboard', verifyToken, requireEmployee, async (req, res) => {
@@ -38,7 +39,38 @@ router.get('/dashboard', verifyToken, requireEmployee, async (req, res) => {
     if (employeeId) where.createdById = employeeId;
     if (sessionId) where.sessionId = sessionId;
 
-    const orders = await prisma.order.findMany({ where, include: { lines: { include: { product: { include: { category: true } } } } } });
+    // const orders = await prisma.order.findMany({ where, include: { lines: { include: { product: { include: { category: true } } } } } });
+   
+    const orders = await prisma.order.findMany({
+  where,
+  include: {
+    lines: {
+      include: {
+        product: { include: { category: true } },
+      },
+    },
+    payments: {
+      include: {
+        paymentMethod: {
+          select: { id: true, name: true},
+        },
+      },
+    },
+  },
+});
+
+// Also fetch loans issued in the same period (for credit sales)
+const loanWhere = {
+  organizationId: req.user.organizationId,
+};
+if (dateFilter.gte) loanWhere.createdAt = dateFilter;
+
+const loans = await prisma.loan.findMany({
+  where: loanWhere,
+  select: { id: true, originalAmount: true, createdAt: true },
+});
+   
+   
     const totalOrders = orders.length;
     const revenue = orders.reduce((s, o) => s + parseFloat(o.total), 0);
     const avgOrderValue = totalOrders > 0 ? revenue / totalOrders : 0;
@@ -92,7 +124,71 @@ router.get('/dashboard', verifyToken, requireEmployee, async (req, res) => {
       }
     }
 
-    res.json({ totalOrders, revenue, avgOrderValue, topProducts, topCategories, topOrders, trendData });
+    // res.json({ totalOrders, revenue, avgOrderValue, topProducts, topCategories, topOrders, trendData });
+ 
+    /* ── Aggregate payment methods ── */
+const byMethod = {};
+
+orders.forEach((o) => {
+  (o.payments || []).forEach((p) => {
+    const name = p.paymentMethod?.name || 'Unknown';
+    if (!byMethod[name]) {
+      byMethod[name] = {
+        name,
+        color: p.paymentMethod?.color || null,
+        amount: 0,
+        count: 0,
+      };
+    }
+    byMethod[name].amount += parseFloat(p.amount || 0);
+    byMethod[name].count += 1;
+  });
+});
+
+/* ── Aggregate credit (loans issued in period) ── */
+const creditTotal = loans.reduce(
+  (sum, l) => sum + parseFloat(l.originalAmount || 0),
+  0
+);
+if (creditTotal > 0) {
+  byMethod['Credit (Loan)'] = {
+    name: 'Credit (Loan)',
+    color: '#F43F5E',
+    amount: creditTotal,
+    count: loans.length,
+  };
+}
+
+/* ── Compute percentages, total, sort ── */
+const paymentMethods = Object.values(byMethod);
+const paymentTotal = paymentMethods.reduce((s, m) => s + m.amount, 0);
+paymentMethods.forEach((m) => {
+  m.percent = paymentTotal > 0 ? (m.amount / paymentTotal) * 100 : 0;
+});
+paymentMethods.sort((a, b) => b.amount - a.amount);
+
+res.json({
+  totalOrders,
+  revenue,
+  avgOrderValue,
+  topProducts,
+  topCategories,
+  topOrders,
+  trendData,
+  // 👇 new field
+  paymentMethods: {
+    total: Number(paymentTotal.toFixed(2)),
+    methods: paymentMethods.map((m) => ({
+      name: m.name,
+      color: m.color,
+      amount: Number(m.amount.toFixed(2)),
+      count: m.count,
+      percent: Number(m.percent.toFixed(1)),
+    })),
+  },
+});
+ 
+ 
   } catch (e) { console.error(e); res.status(500).json({ error: 'Something went wrong' }); }
 });
 

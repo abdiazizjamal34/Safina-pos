@@ -45,7 +45,7 @@ const userValidation = validate({
   ],
    
   pin: [
-    v.required,
+    // v.required,
     v.minLength(4),
   ],
   role: [
