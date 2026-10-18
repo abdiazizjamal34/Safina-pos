@@ -1,6 +1,6 @@
 
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import api from '../../api/client';
 import { EDITABLE_ORDER_STATUSES, ORDER_STATUS } from '../../constants/orders';
@@ -158,6 +158,10 @@ function ReceiptModal({ order, onClose, onNewOrder }) {
       setTimeout(() => iframe.remove(), 3000);
     }, 500);
   };
+
+  //  THIS: Checks if the waiter has made changes that aren't sent to the kitchen yet
+
+
 
   const handleSendEmail = async () => {
     if (!emailInput) return toast.error('Enter an email address');
@@ -863,6 +867,8 @@ useEffect(() => {
   const isFullCredit = putRemainingOnCredit && parsedPayAmount <= 0;
   const isPartialCredit = putRemainingOnCredit && parsedPayAmount > 0 && parsedPayAmount < total;
 
+
+
   /* ────── filtered products ────── */
   // const visibleProducts = products.filter(p => {
   //   const matchCat = activeCat === 'all' || p.categoryId === activeCat;
@@ -913,7 +919,31 @@ const visibleProducts = products.filter((p) => {
     });
   };
 
+  // const updateQty = (idx, delta) => {
+  //   setCartItems(prev => {
+  //     const next = [...prev];
+  //     next[idx] = { ...next[idx], quantity: next[idx].quantity + delta };
+  //     if (next[idx].quantity <= 0) next.splice(idx, 1);
+  //     return next;
+  //   });
+  // };
+
+  // const removeItem = (idx) => setCartItems(prev => prev.filter((_, i) => i !== idx));
+
   const updateQty = (idx, delta) => {
+    if (currentOrder?.status === ORDER_STATUS.PAID || currentOrder?.status === ORDER_STATUS.CANCELLED) return;
+
+    const item = cartItems[idx];
+    
+    // 👇 ADD THIS: Prevent reducing quantity if the order is already READY
+    if (currentOrder?.status === ORDER_STATUS.READY && delta < 0) {
+      const originalLine = currentOrder.lines.find(l => l.productId === item.productId);
+      if (originalLine && item.quantity <= originalLine.quantity) {
+        toast.error("Cannot reduce items that are already marked READY. You can only add.");
+        return;
+      }
+    }
+
     setCartItems(prev => {
       const next = [...prev];
       next[idx] = { ...next[idx], quantity: next[idx].quantity + delta };
@@ -922,7 +952,19 @@ const visibleProducts = products.filter((p) => {
     });
   };
 
-  const removeItem = (idx) => setCartItems(prev => prev.filter((_, i) => i !== idx));
+  const removeItem = (idx) => {
+    if (currentOrder?.status === ORDER_STATUS.PAID || currentOrder?.status === ORDER_STATUS.CANCELLED) return;
+    
+    // 👇 ADD THIS: Prevent removing an item if the order is already READY
+    if (currentOrder?.status === ORDER_STATUS.READY) {
+      toast.error("Cannot remove items that are already marked READY.");
+      return;
+    }
+    
+    setCartItems(prev => prev.filter((_, i) => i !== idx));
+  };
+
+
 
   /* ────── order details helpers ────── */
   const effectiveDeliveryLocation = orderType === 'ROOM'
@@ -1368,6 +1410,30 @@ const handlePay = async () => {
 
   const upiMethod = paymentMethods.find(m => m.name === 'UPI');
 
+  /* ────── NEW: Check if cart is modified from what the kitchen sees ────── */
+  const isCartModified = useMemo(() => {
+    if (!currentOrder) return cartItems.length > 0;
+    
+    const dbLines = currentOrder.lines || initialOrder?.lines || existingOrder?.lines;
+    if (!dbLines) return false; 
+
+    const currentItems = cartItems || [];
+
+    if (currentItems.length !== dbLines.length) return true;
+    
+    for (const item of currentItems) {
+      const originalLine = dbLines.find(l => l.productId === item.productId);
+      if (!originalLine || Number(originalLine.quantity) !== Number(item.quantity)) {
+        return true; 
+      }
+    }
+    
+    return false;
+  }, [cartItems, currentOrder, initialOrder, existingOrder]);
+
+
+
+
   /* ────── render ────── */
   const BG     = '#FFFDF5';
   const WHITE  = '#FFFFFF';
@@ -1380,6 +1446,15 @@ const handlePay = async () => {
   const PINK   = '#F472B6';
   const FONT_H = "'Outfit', system-ui, sans-serif";
   const FONT_B = "'Plus Jakarta Sans', system-ui, sans-serif";
+
+
+
+  console.log("=== CHARGE BUTTON DEBUG ===");
+  console.log("1. allowPayment prop:", allowPayment);
+  console.log("2. Order Status:", currentOrder?.status);
+  console.log("3. isCartModified:", isCartModified);
+  console.log("Current Cart:", cartItems.map(i => ({ id: i.productId, qty: i.quantity })));
+  console.log("DB Lines:", currentOrder?.lines?.map(l => ({ id: l.productId, qty: l.quantity })));
 
   return (
     <div className="pos-layout flex flex-col lg:flex-row h-full overflow-hidden" style={{ background: BG, fontFamily: FONT_B }}>
@@ -2058,6 +2133,12 @@ const handlePay = async () => {
               ) : (
                 cartItems.map((item, idx) => {
                   const itemColor = item.color || ACCENT;
+                   const isLocked = currentOrder?.status === ORDER_STATUS.PAID || currentOrder?.status === ORDER_STATUS.CANCELLED;
+  
+  //  THIS: Check if this specific item is already cooked
+  const originalLine = currentOrder?.lines?.find(l => l.productId === item.productId);
+  const isCooked = currentOrder?.status === ORDER_STATUS.READY && originalLine && item.quantity <= originalLine.quantity;
+
                   return (
                     <div key={idx}
                       className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl"
@@ -2148,7 +2229,7 @@ const handlePay = async () => {
         )}
 
         {/* ── STICKY ACTION BUTTONS ── */}
-        {!showPayment && (
+        {/* {!showPayment && (
           <div className="px-3 pb-3 pt-3 grid grid-cols-2 gap-2 shrink-0"
                style={{ borderTop: `2px solid ${BORDER}`, background: WHITE }}>
             {currentOrder?.status !== ORDER_STATUS.PAID && (
@@ -2192,6 +2273,68 @@ const handlePay = async () => {
             )}
 
             {allowPayment && currentOrder?.status === ORDER_STATUS.READY && (
+              <button
+                onClick={() => setShowPayment(true)}
+                disabled={!cartItems.length}
+                className="h-11 flex items-center justify-center gap-1.5 rounded-xl font-black text-sm transition-all duration-200 border-2 disabled:opacity-40"
+                style={{ background: ACCENT, color: '#fff', borderColor: FG, boxShadow: `3px 3px 0px 0px ${FG}` }}
+              >
+                <CreditCard size={14} strokeWidth={2.5} /> Charge {cartItems.length > 0 ? fmt(total) : ''}
+              </button>
+            )}
+          </div>
+        )} */}
+
+
+
+                {!showPayment && (
+          <div className="px-3 pb-3 pt-3 grid grid-cols-2 gap-2 shrink-0"
+               style={{ borderTop: `2px solid ${BORDER}`, background: WHITE }}>
+            
+            {/* 1. KITCHEN BUTTON */}
+            {currentOrder?.status !== ORDER_STATUS.PAID && currentOrder?.status !== ORDER_STATUS.CANCELLED && (
+              <button
+                onClick={handleSendKitchen}
+                disabled={kitchenLoading || !cartItems.length}
+                className={`h-11 flex items-center justify-center gap-1.5 rounded-xl text-sm font-black transition-all duration-200 border-2 disabled:opacity-40 ${
+                  // 👇 If Charge is hidden (not ready OR cart is modified), take full width
+                  (currentOrder?.status !== ORDER_STATUS.READY || isCartModified) ? 'col-span-2' : ''
+                }`}
+                style={{
+                  background:
+                    isCartModified || currentOrder?.status === ORDER_STATUS.SENT_TO_KITCHEN || currentOrder?.status === ORDER_STATUS.READY
+                      ? '#FEF3C7'
+                      : '#EFF6FF',
+                  color:
+                    isCartModified || currentOrder?.status === ORDER_STATUS.SENT_TO_KITCHEN || currentOrder?.status === ORDER_STATUS.READY
+                      ? '#B45309'
+                      : '#1D4ED8',
+                  borderColor:
+                    isCartModified || currentOrder?.status === ORDER_STATUS.SENT_TO_KITCHEN || currentOrder?.status === ORDER_STATUS.READY
+                      ? '#FCD34D'
+                      : '#BFDBFE',
+                  boxShadow: `2px 2px 0px 0px ${FG}`
+                }}
+              >
+                {kitchenLoading ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : currentOrder?.status === ORDER_STATUS.SENT_TO_KITCHEN ||
+                  currentOrder?.status === ORDER_STATUS.READY ? (
+                  <RotateCcw size={14} strokeWidth={2.5} />
+                ) : (
+                  <ChefHat size={14} strokeWidth={2.5} />
+                )}
+
+                {isCartModified ? 'Update Kitchen (New Items Added)' : 
+                 (currentOrder?.status === ORDER_STATUS.SENT_TO_KITCHEN || currentOrder?.status === ORDER_STATUS.READY
+                  ? 'Update Kitchen'
+                  : 'Kitchen')}
+              </button>
+            )}
+
+            {/* 2. CHARGE BUTTON */}
+            {/* 👇 Only shows if READY AND the cart matches the kitchen exactly */}
+            {allowPayment && currentOrder?.status === ORDER_STATUS.READY && !isCartModified && (
               <button
                 onClick={() => setShowPayment(true)}
                 disabled={!cartItems.length}

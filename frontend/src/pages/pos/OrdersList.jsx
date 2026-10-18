@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../api/client';
@@ -29,6 +28,8 @@ import {
   Clock,
   UserCheck,
   Printer,
+  Wallet,
+  X,
 } from 'lucide-react';
 
 const BG      = '#FFFDF5';
@@ -100,6 +101,80 @@ const ORDER_STATUS_GROUPS = [
   { id: 'CANCELLED', title: 'Cancelled' },
 ];
 
+// 👇 NEW: Payment Details Modal Component
+function PaymentDetailsModal({ order, onClose }) {
+  if (!order) return null;
+
+  const totalPaid = (order.payments || []).reduce((s, p) => s + Number(p.amount), 0);
+  const balanceDue = Math.max(0, Number(order.total) - totalPaid);
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md rounded-2xl border-2 border-slate-800 bg-white p-5 shadow-[6px_6px_0px_0px_#1E293B]">
+        <div className="flex items-center justify-between border-b-2 border-slate-100 pb-3 mb-4">
+          <h3 className="font-black text-lg text-slate-800 font-outfit">
+            Payment Details
+          </h3>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 transition">
+            <X size={18} strokeWidth={2.5} />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <div className="text-center bg-[#FAFAFA] rounded-xl p-4 border-2 border-slate-200">
+            <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+              Order #{order.orderNumber}
+            </div>
+            <div className="text-3xl font-black text-violet-600 font-outfit mt-1">
+              {fmt(order.total)}
+            </div>
+          </div>
+
+          <div>
+            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+              Payment Breakdown
+            </h4>
+            <div className="space-y-2">
+              {(order.payments || []).map((p, idx) => (
+                <div key={idx} className="flex justify-between items-center text-sm border-b border-slate-100 pb-2">
+                  <div>
+                    <div className="font-bold text-slate-700">
+                      {p.paymentMethod?.name || p.paymentMethod || 'Payment'}
+                    </div>
+                    {p.paymentReference && (
+                      <div className="text-[10px] text-slate-400">Ref: {p.paymentReference}</div>
+                    )}
+                  </div>
+                  <div className="font-black text-slate-800">{fmt(p.amount)}</div>
+                </div>
+              ))}
+              {(!order.payments || order.payments.length === 0) && (
+                <div className="text-sm text-slate-500 italic py-2">
+                  Fully on Credit / Loan
+                </div>
+              )}
+            </div>
+          </div>
+
+          {balanceDue > 0.01 && (
+             <div className="flex justify-between items-center text-sm bg-rose-50 text-rose-700 p-3 rounded-xl border border-rose-200 font-bold">
+                <span>Remaining / Loan Balance</span>
+                <span>{fmt(balanceDue)}</span>
+             </div>
+          )}
+        </div>
+
+        <button
+          onClick={onClose}
+          className="mt-6 w-full h-11 rounded-xl bg-violet-600 font-black text-white border-2 border-slate-800 shadow-[3px_3px_0px_0px_#1E293B] active:translate-y-0.5 transition"
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function OrdersList({ session }) {
   const navigate = useNavigate();
 
@@ -107,6 +182,9 @@ export default function OrdersList({ session }) {
   const [loading, setLoading] = useState(true);
   const [cancelTarget, setCancelTarget] = useState(null);
   const [cancelLoading, setCancelLoading] = useState(false);
+  
+  // 👇 NEW: State for Payment Modal
+  const [paymentOrder, setPaymentOrder] = useState(null);
 
   const fetchOrders = async () => {
     if (!session?.id) return;
@@ -156,7 +234,7 @@ export default function OrdersList({ session }) {
     
     const discount = parseFloat(o.discountAmount || 0);
     const paymentRows = (o.payments || [])
-      .map(p => `<tr><td style="font-size:11px;color:#555">Paid via ${p.paymentMethod} ${p.paymentReference ? `(${p.paymentReference})` : ''}</td><td class="amt" style="font-size:11px;color:#555">ETB ${Number(p.amount).toFixed(2)}</td></tr>`)
+      .map(p => `<tr><td style="font-size:11px;color:#555">Paid via ${p.paymentMethod?.name || p.paymentMethod || 'Payment'} ${p.paymentReference ? `(${p.paymentReference})` : ''}</td><td class="amt" style="font-size:11px;color:#555">ETB ${Number(p.amount).toFixed(2)}</td></tr>`)
       .join('');
     
     const customerNames = o.customerNameSnapshot || o.customers?.map(c => c.name).join(', ') || o.customer?.name || '';
@@ -231,6 +309,47 @@ export default function OrdersList({ session }) {
     }, 500);
   };
 
+  // const handleEditOrder = (order) => {
+  //   const cartItems =
+  //     order.lines?.map((line) => ({
+  //       productId: line.productId,
+  //       name: line.product?.name,
+  //       unitPrice: parseFloat(line.unitPrice),
+  //       price: parseFloat(line.unitPrice),
+  //       quantity: line.quantity,
+  //       lineTotal: parseFloat(line.lineTotal),
+  //       categoryColor: line.product?.category?.color || ACCENT,
+  //       color: line.product?.category?.color || ACCENT,
+  //       tax: parseFloat(line.product?.tax || 0),
+  //     })) || [];
+
+  //   navigate('/pos', {
+  //     state: {
+  //       loadOrder: {
+  //         id: order.id,
+  //         orderNumber: order.orderNumber,
+  //         status: order.status,
+  //         orderType: order.orderType,
+  //         tableId: order.tableId,
+  //         table: order.table,
+  //         deliveryLocation: order.deliveryLocation,
+  //         customerNameSnapshot: order.customerNameSnapshot,
+  //         customerPhoneSnapshot: order.customerPhoneSnapshot,
+  //         customerNotes: order.customerNotes,
+  //         customerIds:
+  //           order.customers?.map((c) => c.id) ||
+  //           (order.customerId ? [order.customerId] : []),
+  //         customers:
+  //           order.customers ||
+  //           (order.customer ? [order.customer] : []),
+  //         couponCode: order.couponCode,
+  //         cartItems,
+  //       },
+  //     },
+  //   });
+  // };
+
+
   const handleEditOrder = (order) => {
     const cartItems =
       order.lines?.map((line) => ({
@@ -265,6 +384,7 @@ export default function OrdersList({ session }) {
             order.customers ||
             (order.customer ? [order.customer] : []),
           couponCode: order.couponCode,
+          lines: order.lines, // 👈 ADD THIS LINE HERE
           cartItems,
         },
       },
@@ -516,14 +636,6 @@ export default function OrdersList({ session }) {
                               ? 'cursor-pointer hover:-translate-y-1 hover:shadow-lg'
                               : ''
                           }`}
-
-//                           className={`rounded-2xl flex flex-col justify-between overflow-hidden transition-all duration-200 border-2 ${
-//   isEditable
-//     ? 'cursor-pointer hover:-translate-y-1 hover:shadow-lg'
-//     : ''
-// } ${
-//   order.status === 'READY' ? 'animate-ready-heartbeat' : ''
-// }`}
                           style={{
                             background: WHITE,
                             borderColor: BORDER,
@@ -694,6 +806,24 @@ export default function OrdersList({ session }) {
                                 <Printer size={14} strokeWidth={2.5} />
                               </button>
 
+                              {/* 👇 NEW: Payment Details Button (only for paid orders) */}
+                              {isPaid && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setPaymentOrder(order);
+                                  }}
+                                  className="p-1.5 rounded-lg border-2 transition-colors text-emerald-600 hover:bg-emerald-50"
+                                  style={{
+                                    background: WHITE,
+                                    borderColor: '#A7F3D0',
+                                  }}
+                                  title="View Payment Details"
+                                >
+                                  <Wallet size={14} strokeWidth={2.5} />
+                                </button>
+                              )}
+
                               {isEditable && (
                                 <>
                                   <div
@@ -746,6 +876,12 @@ export default function OrdersList({ session }) {
         loading={cancelLoading}
         onConfirm={handleCancel}
         onClose={() => setCancelTarget(null)}
+      />
+
+      {/* 👇 NEW: Payment Details Modal */}
+      <PaymentDetailsModal
+        order={paymentOrder}
+        onClose={() => setPaymentOrder(null)}
       />
     </div>
   );
