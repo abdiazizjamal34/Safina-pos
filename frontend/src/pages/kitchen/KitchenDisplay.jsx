@@ -1777,76 +1777,127 @@ export default function KitchenDisplay({
       stage
     ) => {
 
-      try {
+      if (stage === KDS_STAGE.COMPLETED) {
+      setTickets((prev) =>
+        prev.map((ticket) => {
+          if (ticket.id !== ticketId) return ticket;
+          return {
+            ...ticket,
+            stage: stage,
+            order: {
+              ...ticket.order,
+              lines: (ticket.order?.lines || []).map((line) =>
+                line.kdsStation === station
+                  ? { ...line, kdsStatus: KDS_ITEM_STATUS.DONE }
+                  : line
+              ),
+            },
+          };
+        })
+      );
+    }
 
-        const updated =
-          await api.put(
-            `/kds/tickets/${ticketId}/stage`,
-            {
-              stage
-            }
-          );
+    //   try {
 
-        setTickets((prev) => {
+    //     const updated =
+    //       await api.put(
+    //         `/kds/tickets/${ticketId}/stage`,
+    //         {
+    //           stage
+    //         }
+    //       );
 
-          const next =
-            prev.map(
-              (ticket) =>
-                ticket.id ===
-                ticketId
-                  ? {
-                      ...ticket,
-                      ...updated
-                    }
-                  : ticket
-            );
+    //     setTickets((prev) => {
 
-          ticketsRef.current =
-            next;
+    //       const next =
+    //         prev.map(
+    //           (ticket) =>
+    //             ticket.id ===
+    //             ticketId
+    //               ? {
+    //                   ...ticket,
+    //                   ...updated
+    //                 }
+    //               : ticket
+    //         );
 
-          return next;
+    //       ticketsRef.current =
+    //         next;
 
-        });
+    //       return next;
 
-        /*
-         * Remove NEW highlight.
-         */
-        setNewTicketIds((prev) => {
+    //     });
 
-          const next =
-            new Set(prev);
+    //     /*
+    //      * Remove NEW highlight.
+    //      */
+    //     setNewTicketIds((prev) => {
 
-          next.delete(ticketId);
+    //       const next =
+    //         new Set(prev);
 
-          return next;
+    //       next.delete(ticketId);
 
-        });
+    //       return next;
 
-        /*
-         * Remove UPDATED highlight.
-         */
-        setUpdatedTicketIds(
-          (prev) => {
+    //     });
 
-            const next =
-              new Set(prev);
+    //     /*
+    //      * Remove UPDATED highlight.
+    //      */
+    //     setUpdatedTicketIds(
+    //       (prev) => {
 
-            next.delete(ticketId);
+    //         const next =
+    //           new Set(prev);
 
-            return next;
+    //         next.delete(ticketId);
 
-          }
+    //         return next;
+
+    //       }
+    //     );
+
+    //   } catch {
+
+    //     toast.error(
+    //       'Failed to update stage'
+    //     );
+
+    //   }
+
+    // };
+
+try {
+      const updated = await api.put(`/kds/tickets/${ticketId}/stage`, { stage });
+
+      // Sync with server response
+      setTickets((prev) => {
+        const next = prev.map((ticket) =>
+          ticket.id === ticketId ? { ...ticket, ...updated } : ticket
         );
+        ticketsRef.current = next;
+        return next;
+      });
 
-      } catch {
+      // Remove highlights
+      setNewTicketIds((prev) => {
+        const next = new Set(prev);
+        next.delete(ticketId);
+        return next;
+      });
+      setUpdatedTicketIds((prev) => {
+        const next = new Set(prev);
+        next.delete(ticketId);
+        return next;
+      });
 
-        toast.error(
-          'Failed to update stage'
-        );
+    } catch {
+      toast.error('Failed to update stage');
+      // Optional: Revert state here if the API fails, but usually not necessary
+    }
+  };
 
-      }
-
-    };
 
   /* ─────────────────────────────────────────────
      ITEM DONE TOGGLE

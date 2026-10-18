@@ -102,7 +102,11 @@ const [closeCheckLoading, setCloseCheckLoading] = useState(false);
 
   const fetchDashStats = async () => {
     try {
-      const data = await api.get('/reports/dashboard?period=today');
+
+      const isWaiter = ['WAITER', 'CASHIER'].includes(user?.role);
+      const employeeQuery = isWaiter ? `&employeeId=${user.id}` : '';
+
+    const data = await api.get(`/reports/dashboard?period=today${employeeQuery}`);
       setDashStats(data);
     } catch { /* silent */ }
   };
@@ -196,7 +200,49 @@ const [closeCheckLoading, setCloseCheckLoading] = useState(false);
   //   } catch (err) { toast.error(err.error || 'Failed to close session'); }
   //   finally { setCloseLoading(false); }
   // };
+
+
   
+// const handleCloseSession = async () => {
+//   // Extra frontend protection
+//   if (closeCheck?.hasUnfinishedOrders) {
+//     toast.error(
+//       'Cannot close session. Please finish all unpaid and kitchen orders first.'
+//     );
+//     return;
+//   }
+
+//   setCloseLoading(true);
+
+//   try {
+//     await api.post('/session/close');
+
+//     const summary = await api.get(
+//       '/reports/dashboard?period=today'
+//     );
+
+//     setClosedSession(session);
+//     setClosingSummary(summary);
+//     setSession(null);
+//     setShowCloseConfirm(false);
+//     setShowSummaryModal(true);
+
+//     sessionStorage.removeItem('pos-active-tab');
+
+//     toast.success('Session closed');
+
+//   } catch (err) {
+//     toast.error(
+//       err?.error ||
+//       err?.message ||
+//       'Failed to close session'
+//     );
+//   } finally {
+//     setCloseLoading(false);
+//   }
+// };
+
+
 const handleCloseSession = async () => {
   // Extra frontend protection
   if (closeCheck?.hasUnfinishedOrders) {
@@ -211,8 +257,12 @@ const handleCloseSession = async () => {
   try {
     await api.post('/session/close');
 
+    // 👇 Apply the same isolation logic for the final summary
+    const isWaiter = ['WAITER', 'CASHIER'].includes(user?.role);
+    const employeeQuery = isWaiter ? `&employeeId=${user.id}` : '';
+
     const summary = await api.get(
-      '/reports/dashboard?period=today'
+      `/reports/dashboard?period=today${employeeQuery}`
     );
 
     setClosedSession(session);
@@ -235,7 +285,6 @@ const handleCloseSession = async () => {
     setCloseLoading(false);
   }
 };
-
   const handleNewSession = async () => {
     try {
       const s = await api.post('/session/open');

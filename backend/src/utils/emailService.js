@@ -149,3 +149,141 @@ const sendReceiptEmail = async (to, order) => {
 
 module.exports = { sendReceiptEmail };
 
+/**
+ * Send an alert 30 minutes before closing if there are unfinished orders
+ */
+const sendClosingAlertEmail = async (adminEmail, unfinishedOrders) => {
+  try {
+    const fmt = (n) => `ETB ${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+    
+    const rows = unfinishedOrders.map(o => `
+      <tr>
+        <td style="padding: 8px; border-bottom: 1px solid #eee;">${o.orderNumber}</td>
+        <td style="padding: 8px; border-bottom: 1px solid #eee;">${o.table?.tableNumber || o.orderType}</td>
+        <td style="padding: 8px; border-bottom: 1px solid #eee; color: #dc2626; font-weight: bold;">${o.status}</td>
+        <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">${fmt(o.total)}</td>
+      </tr>
+    `).join('');
+
+    const html = `
+      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
+        <h2 style="color: #dc2626;">⚠️ URGENT: Session Closing in 30 Minutes</h2>
+        <p>The POS session will close automatically shortly.</p>
+        <p>You currently have <strong>${unfinishedOrders.length} unfinished order(s)</strong>. If they are not completed or cancelled, the system will automatically mark them as PAID at closing time.</p>
+        
+        <h3>Unfinished Orders:</h3>
+        <table style="width: 100%; border-collapse: collapse;">
+          <tr style="background: #f1f5f9; text-align: left;">
+            <th style="padding: 8px;">Order #</th>
+            <th style="padding: 8px;">Type/Table</th>
+            <th style="padding: 8px;">Status</th>
+            <th style="padding: 8px; text-align: right;">Total</th>
+          </tr>
+          ${rows}
+        </table>
+        
+        <p style="margin-top: 30px; font-size: 12px; color: #888; text-align: center;">
+          This is an automated alert from Safina POS.
+        </p>
+      </div>
+    `;
+
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: adminEmail,
+      subject: `⚠️ URGENT: ${unfinishedOrders.length} Unfinished Orders Pending Close`,
+      html
+    });
+    console.log('✅ Closing alert email sent.');
+  } catch (error) {
+    console.error('❌ Failed to send alert email:', error);
+  }
+};
+
+/**
+ * Send the Daily End-of-Day Report
+ */
+const sendDailyReportEmail = async (adminEmail, reportData, loans) => {
+  try {
+    const fmt = (n) => `ETB ${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+    
+    // Build the payment methods HTML
+    const paymentRows = (reportData.paymentMethods?.methods || []).map(m => `
+      <tr>
+        <td style="padding: 8px; border-bottom: 1px solid #eee;">${m.name}</td>
+        <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">${fmt(m.amount)}</td>
+      </tr>
+    `).join('');
+
+    // Build the outstanding loans HTML
+    const loanRows = loans.map(l => `
+      <tr>
+        <td style="padding: 8px; border-bottom: 1px solid #eee;">${l.customer?.name || 'Unknown'}</td>
+        <td style="padding: 8px; border-bottom: 1px solid #eee;">${l.order?.orderNumber || '—'}</td>
+        <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right; color: #dc2626;">${fmt(l.remainingAmount)}</td>
+      </tr>
+    `).join('') || '<tr><td colspan="3" style="padding: 8px; text-align: center;">No outstanding loans</td></tr>';
+
+    const html = `
+      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
+        <h2 style="color: #8B5CF6;">Safina POS - Daily Session Report</h2>
+        <p>Date: <strong>${new Date().toLocaleDateString()}</strong></p>
+        
+        <div style="background: #F8FAFC; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+          <h3 style="margin-top: 0;">Summary</h3>
+          <p>Total Orders: <strong>${reportData.totalOrders}</strong></p>
+          <p>Total Revenue: <strong style="color: #059669;">${fmt(reportData.revenue)}</strong></p>
+          <p>Average Order Value: <strong>${fmt(reportData.avgOrderValue)}</strong></p>
+        </div>
+
+        <h3>Sales by Payment Method</h3>
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+          <tr style="background: #f1f5f9; text-align: left;">
+            <th style="padding: 8px;">Method</th>
+            <th style="padding: 8px; text-align: right;">Amount</th>
+          </tr>
+          ${paymentRows}
+        </table>
+
+                <!-- Force Paid Orders Alert -->
+        ${reportData.forcedPaidOrders && reportData.forcedPaidOrders.length > 0 ? `
+          <div style="background: #FEF2F2; border: 2px solid #FECACA; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+            <h3 style="margin-top: 0; color: #DC2626;">⚠️ Auto-Settled Orders</h3>
+            <p>The following orders were unfinished at closing time and were automatically marked as <strong>PAID</strong>:</p>
+            <ul style="margin: 0; padding-left: 20px; color: #991B1B;">
+              ${reportData.forcedPaidOrders.map(id => `<li>Order #${id}</li>`).join('')}
+            </ul>
+          </div>
+        ` : ''}
+
+        <h3>Outstanding Customer Loans</h3>
+        <table style="width: 100%; border-collapse: collapse;">
+          <tr style="background: #f1f5f9; text-align: left;">
+            <th style="padding: 8px;">Customer</th>
+            <th style="padding: 8px;">Order #</th>
+            <th style="padding: 8px; text-align: right;">Remaining</th>
+          </tr>
+          ${loanRows}
+        </table>
+        
+        <p style="margin-top: 30px; font-size: 12px; color: #888; text-align: center;">
+          This is an automated message from Safina POS.
+        </p>
+      </div>
+    `;
+
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: adminEmail,
+      subject: `Safina POS Daily Report - ${new Date().toLocaleDateString()}`,
+      html
+    });
+    console.log('✅ Daily report email sent successfully');
+  } catch (error) {
+    console.error('❌ Failed to send daily report email:', error);
+  }
+};
+
+module.exports = {  sendReceiptEmail, 
+  sendDailyReportEmail, 
+  sendClosingAlertEmail  };
