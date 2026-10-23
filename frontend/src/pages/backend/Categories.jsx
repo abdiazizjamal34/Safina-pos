@@ -1,7 +1,16 @@
 import { useEffect, useState } from 'react';
 import api from '../../api/client';
 import toast from 'react-hot-toast';
-import { Tag, Edit3, Trash2, X, Plus } from 'lucide-react';
+import { Tag, Edit3, Trash2, X, Plus, Image as ImageIcon } from 'lucide-react';
+
+// Helper to build image URLs (matches the one in OrderView)
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const SERVER_BASE_URL = API_BASE_URL.replace(/\/api\/?$/, '');
+const getImageUrl = (imageUrl) => {
+  if (!imageUrl) return null;
+  if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://') || imageUrl.startsWith('blob:')) return imageUrl;
+  return `${SERVER_BASE_URL}${imageUrl.startsWith('/') ? '' : '/'}${imageUrl}`;
+};
 
 function Modal({ title, onClose, children }) {
   return (
@@ -25,28 +34,65 @@ export default function Categories() {
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null);
   const [selected, setSelected] = useState(null);
-  const [form, setForm] = useState({ name: '', color: '#F97316' });
+  
+  // 👇 Added imageFile to state
+  const [form, setForm] = useState({ name: '', color: '#F97316', imageFile: null, imageUrl: null });
 
   const load = async () => {
     try {
       const [c, p] = await Promise.all([api.get('/categories'), api.get('/products')]);
       setCategories(c); setProducts(p);
-    } finally { setLoading(false); }
+    } catch {
+      toast.error('Failed to load categories');
+    } finally { 
+      setLoading(false); 
+    }
   };
 
   useEffect(() => { load(); }, []);
 
-  const openAdd = () => { setForm({ name: '', color: '#F97316' }); setSelected(null); setModal('add'); };
-  const openEdit = (c) => { setForm({ name: c.name, color: c.color }); setSelected(c); setModal('edit'); };
+  const openAdd = () => { 
+    setForm({ name: '', color: '#F97316', imageFile: null, imageUrl: null }); 
+    setSelected(null); 
+    setModal('add'); 
+  };
+  
+  const openEdit = (c) => { 
+    setForm({ name: c.name, color: c.color || '#F97316', imageFile: null, imageUrl: c.imageUrl }); 
+    setSelected(c); 
+    setModal('edit'); 
+  };
 
+  // 👇 Corrected handleSubmit function
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // Use FormData for multer
+    const data = new FormData();
+    data.append('name', form.name);
+    data.append('color', form.color);
+    
+    if (form.imageFile) {
+      data.append('image', form.imageFile);
+    }
+
     try {
-      if (modal === 'add') await api.post('/categories', form);
-      else await api.put(`/categories/${selected.id}`, form);
-      toast.success(modal === 'add' ? 'Category added' : 'Category updated');
-      setModal(null); load();
-    } catch (err) { toast.error(err.error || 'Failed'); }
+      if (modal === 'add') {
+        await api.post('/categories', data, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        });
+        toast.success('Category added');
+      } else {
+        await api.put(`/categories/${selected.id}`, data, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        });
+        toast.success('Category updated');
+      }
+      setModal(null); 
+      load();
+    } catch (err) { 
+      toast.error(err?.error || err?.message || 'Failed to save category'); 
+    }
   };
 
   const handleDelete = async () => {
@@ -82,7 +128,7 @@ export default function Categories() {
           <table className="w-full min-w-[550px] border-collapse">
             <thead>
               <tr className="bg-slate-50 text-xs text-slate-500 uppercase font-bold border-b-2 border-slate-800">
-                {['Color', 'Name', 'Products Count', 'Actions'].map(h => (
+                {['Image', 'Name', 'Products Count', 'Actions'].map(h => (
                   <th key={h} className="px-6 py-3.5 text-left font-bold text-slate-600">{h}</th>
                 ))}
               </tr>
@@ -92,13 +138,22 @@ export default function Categories() {
                 const count = products.filter(p => p.categoryId === c.id).length;
                 return (
                   <tr key={c.id} className="hover:bg-slate-50/50 transition">
+                    {/* 👇 Image Column */}
                     <td className="px-6 py-4">
-                      <div className="w-8 h-8 rounded-xl border-2 border-slate-800 shadow-pop-sm" style={{ backgroundColor: c.color }} />
+                      <div className="w-10 h-10 rounded-xl border-2 border-slate-800 flex items-center justify-center overflow-hidden bg-slate-100 shrink-0" style={{ boxShadow: '2px 2px 0px 0px #1E293B' }}>
+                        {c.imageUrl ? (
+                          <img src={getImageUrl(c.imageUrl)} alt={c.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center" style={{ backgroundColor: c.color }}>
+                            <ImageIcon size={16} color="#fff" />
+                          </div>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4">
                       <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-semibold text-slate-800"
-                        style={{ backgroundColor: c.color + '15', border: `1px solid ${c.color}44` }}>
-                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: c.color }} />
+                        style={{ backgroundColor: (c.color || '#6B7280') + '15', border: `1px solid ${(c.color || '#6B7280')}44` }}>
+                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: c.color || '#6B7280' }} />
                         {c.name}
                       </span>
                     </td>
@@ -137,6 +192,30 @@ export default function Categories() {
                 className="w-full bg-white border-2 border-slate-200 text-slate-800 rounded-xl px-3 py-2.5 focus:outline-none focus:border-[#8B5CF6] transition font-semibold"
                 placeholder="e.g. Hot Drinks" />
             </div>
+
+            {/* 👇 Image Upload Field */}
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1">Category Image</label>
+              
+              {(form.imageFile || form.imageUrl) && (
+                <div className="w-20 h-20 rounded-xl border-2 border-slate-800 overflow-hidden mb-3">
+                  <img 
+                    src={form.imageFile ? URL.createObjectURL(form.imageFile) : getImageUrl(form.imageUrl)} 
+                    alt="Preview" 
+                    className="w-full h-full object-cover" 
+                  />
+                </div>
+              )}
+
+              <input 
+                type="file" 
+                accept="image/jpeg, image/png, image/webp"
+                onChange={(e) => setForm({ ...form, imageFile: e.target.files[0] })}
+                className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-2 file:border-slate-800 file:text-sm file:font-bold file:bg-violet-50 file:text-violet-700 hover:file:bg-violet-100 cursor-pointer"
+              />
+              <p className="text-[10px] text-slate-400 mt-1 font-semibold">JPG, PNG or WebP (max 5MB)</p>
+            </div>
+
             <div>
               <label className="block text-sm font-bold text-slate-700 mb-2">Color</label>
               <div className="flex items-center gap-4">

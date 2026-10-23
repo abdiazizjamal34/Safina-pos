@@ -148,7 +148,7 @@ model ProductCategory {
   id    String @id @default(uuid())
   name  String
   color String @default("#6B7280")
-
+  imageUrl       String? 
   isActive Boolean @default(true)
 
   createdAt DateTime @default(now())
