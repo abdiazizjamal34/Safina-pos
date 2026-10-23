@@ -248,7 +248,7 @@ function TicketCard({
                 #{order.orderNumber || '—'}
               </span>
 
-              {order.orderType === 'DINE_IN' ? (
+              {order.orderType === 'Table' ? (
                 <span className="flex items-center gap-1 bg-violet-100 border border-violet-300 text-violet-800 text-xs font-black px-2 py-0.5 rounded-lg font-outfit">
                   <Utensils
                     size={10}

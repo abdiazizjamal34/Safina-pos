@@ -1612,10 +1612,14 @@ const handlePay = async () => {
           </button>
 
           {/* Category cards */}
+                   {/* Category cards */}
           {categories.map(c => {
             const catColor = c.color || ACCENT;
             const count = productCountByCategory[c.id] || 0;
             const isEmpty = count === 0;
+            
+            // Get the image URL using your helper
+            const catImageUrl = c.imageUrl ? getImageUrl(c.imageUrl) : null;
 
             return (
               <button
@@ -1641,45 +1645,56 @@ const handlePay = async () => {
                   e.currentTarget.style.boxShadow = `3px 3px 0px 0px ${catColor}`;
                 }}
               >
-                {/* Top: icon */}
+                {/* 👇 BACKGROUND IMAGE */}
+                {catImageUrl ? (
+                  <>
+                    <img
+                      src={catImageUrl}
+                      alt={c.name}
+                      className="absolute inset-0 w-full h-full object-cover"
+                    />
+                    {/* Dark Gradient Overlay so text is readable */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
+                  </>
+                ) : (
+                  /* Fallback solid color if no image */
+                  <div className="absolute inset-0" style={{ background: catColor }} />
+                )}
+
+                {/* 👇 TOP: Icon (Overlay on image) */}
                 <div
-                  className="w-12 h-12 rounded-xl flex items-center justify-center border-2 shrink-0"
+                  className="w-10 h-10 rounded-xl flex items-center justify-center border-2 shrink-0 relative z-10"
                   style={{ background: catColor, borderColor: FG, boxShadow: '2px 2px 0px 0px #1E293B' }}
                 >
-                  <Coffee size={22} color="#fff" strokeWidth={2.5} />
+                  <Coffee size={18} color="#fff" strokeWidth={2.5} />
                 </div>
 
-                {/* Bottom: name + count */}
+                {/* 👇 BOTTOM: Name + Count (Overlay on image) */}
                 <div className="mt-auto w-full relative z-10">
                   <div
-                    className="font-black leading-tight line-clamp-1"
-                    style={{ color: FG, fontFamily: FONT_H, fontSize: 15 }}
+                    className="font-black leading-tight line-clamp-1 drop-shadow-md text-white"
+                    style={{ fontFamily: FONT_H, fontSize: 15 }}
                     title={c.name}
                   >
                     {c.name}
                   </div>
                   <div
-                    className="text-[11px] font-bold mt-0.5 flex items-center gap-1"
-                    style={{ color: isEmpty ? '#94A3B8' : MUTED }}
+                    className="text-[11px] font-bold mt-0.5 flex items-center gap-1 text-white/90 drop-shadow-md"
                   >
                     <Package size={10} strokeWidth={2.5} />
                     {count} item{count !== 1 ? 's' : ''}
                   </div>
                 </div>
 
-                {/* Big decorative icon watermark */}
-                <div
-                  className="absolute -right-3 -bottom-3 opacity-[0.08] pointer-events-none"
-                  style={{ color: catColor }}
-                >
-                  <Coffee size={80} strokeWidth={1.5} />
-                </div>
-
-                {/* Bottom color bar */}
-                <div
-                  className="absolute bottom-0 left-0 right-0 h-1"
-                  style={{ background: catColor }}
-                />
+                {/* Watermark (Removed if image exists, kept if no image) */}
+                {!catImageUrl && (
+                  <div
+                    className="absolute -right-3 -bottom-3 opacity-[0.15] pointer-events-none z-0"
+                    style={{ color: '#fff' }}
+                  >
+                    <Coffee size={80} strokeWidth={1.5} />
+                  </div>
+                )}
               </button>
             );
           })}
