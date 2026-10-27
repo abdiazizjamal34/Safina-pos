@@ -1701,12 +1701,12 @@ const handlePay = async () => {
                 )}
 
                 {/* 👇 TOP: Icon (Overlay on image) */}
-                <div
+                {/* <div
                   className="w-10 h-10 rounded-xl flex items-center justify-center border-2 shrink-0 relative z-10"
                   style={{ background: catColor, borderColor: FG, boxShadow: '2px 2px 0px 0px #1E293B' }}
                 >
                   <Coffee size={18} color="#fff" strokeWidth={2.5} />
-                </div>
+                </div> */}
 
                 {/* 👇 BOTTOM: Name + Count (Overlay on image) */}
                 <div className="mt-auto w-full relative z-10">
