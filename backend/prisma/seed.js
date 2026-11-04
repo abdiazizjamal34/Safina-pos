@@ -8,17 +8,21 @@ async function main() {
 
   const organization = await prisma.organization.create({
     data: {
-      name: 'Safina Coffee & Restaurant',
+      name: ' Coffee & Restaurant system' ,
     },
   });
 
   const passwordHash = await bcrypt.hash('Admin@123', 10);
 
+  // add pin in addmin user
+  const hashedPin = await bcrypt.hash('1234', 10); 
+
   const admin = await prisma.user.create({
     data: {
       name: 'Administrator',
-      email: 'admin@safina.com',
+      email: 'admin@test.com',
       password: passwordHash,
+      pin: hashedPin,
       role: 'ADMIN',
       organizationId: organization.id,
       isActive: true,
@@ -28,6 +32,7 @@ async function main() {
   console.log('✅ Admin created:');
   console.log(`   Email: ${admin.email}`);
   console.log('   Password: Admin@123');
+  console.log('   PIN: 1234');
 }
 
 main()
