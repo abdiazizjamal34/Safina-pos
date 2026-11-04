@@ -1,0 +1,9 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# Single-page app fallback so client-side routes (React Router) resolve on refresh
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
