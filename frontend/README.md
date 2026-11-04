@@ -23,7 +23,7 @@ npm run build:pos
 cd android-pos
 .\gradlew --stop
 .\gradlew assembleRelease
-Copy-Item app\build\outputs\apk\release\app-release.apk ..\Safina-POS-v2.4.apk
+Copy-Item app\build\outputs\apk\release\app-release.apk ..\Safina-POS-v2.7.apk
 cd ..
 
 # ─── Rebuild Waiter ────────────────────────

@@ -510,7 +510,7 @@ export default function OrdersList({ session }) {
             );
           })}
 
-          <div
+          {/* <div
             className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black border-2"
             style={{
               background: `${ACCENT}12`,
@@ -520,7 +520,7 @@ export default function OrdersList({ session }) {
           >
             <IndianRupee size={12} strokeWidth={2.5} />
             Revenue: {fmt(revenue)}
-          </div>
+          </div> */}
         </div>
       )}
 
